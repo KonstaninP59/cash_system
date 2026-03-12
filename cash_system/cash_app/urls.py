@@ -12,6 +12,9 @@ urlpatterns = [
     path('products/<int:pk>/update/', views.product_update, name='product_update'),
     path('products/<int:pk>/delete/', views.product_delete, name='product_delete'),
     
+    # Штрих-код
+    path('barcode/', views.barcode_add, name='barcode_add'),
+    
     # История
     path('history/', views.history_list, name='history_list'),
     
@@ -20,4 +23,8 @@ urlpatterns = [
     path('sale/add/', views.add_to_cart, name='add_to_cart'),
     path('sale/remove/<int:product_id>/', views.remove_from_cart, name='remove_from_cart'),
     path('sale/clear/', views.clear_cart, name='clear_cart'),
+    
+    # Чек
+    path('receipt/', views.receipt_view, name='receipt_view'),
+    path('receipt/pdf/', views.receipt_pdf, name='receipt_pdf'),
 ]

@@ -19,9 +19,12 @@
                             <div class="card-body">
                                 <h6 class="card-title">{{ product.name }}</h6>
                                 <p class="card-text">
-                                    <span class="badge bg-secondary">В наличии: {{ product.quantity }} шт</span><br>
-                                    <strong>Цена: {{ product.price }} ₽</strong><br>
+                                    <span class="badge bg-secondary">В наличии: {{ product.quantity }} {{ product.get_unit_display }}</span><br>
+                                    <strong>Цена: {{ product.price }} ₽/{{ product.get_unit_display }}</strong><br>
                                     <small class="text-muted">Годен до: {{ product.expiration_date|date:"d.m.Y" }}</small>
+                                    {% if product.barcode %}
+                                        <br><small class="text-muted">ШК: {{ product.barcode }}</small>
+                                    {% endif %}
                                 </p>
                                 
                                 {% if product.is_expiring_soon %}
@@ -69,7 +72,7 @@
                             <div class="d-flex justify-content-between align-items-center">
                                 <div>
                                     <h6 class="mb-1">{{ item.product.name }}</h6>
-                                    <small>{{ item.quantity }} шт × {{ item.product.price }} ₽</small>
+                                    <small>{{ item.quantity }} {{ item.product.get_unit_display }} × {{ item.product.price }} ₽</small>
                                 </div>
                                 <div>
                                     <strong>{{ item.subtotal }} ₽</strong>

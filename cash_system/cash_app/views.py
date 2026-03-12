@@ -3,10 +3,18 @@ from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.db import transaction
+from django.http import HttpResponse
 from django.utils import timezone
 from datetime import date, timedelta
 from .models import Product, History
-from .forms import LoginForm, ProductForm, SaleForm
+from .forms import LoginForm, ProductForm, SaleForm, BarcodeForm
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import mm
+from io import BytesIO
+import json
 
 def login_view(request):
     """Вход в систему"""
@@ -90,7 +98,6 @@ def product_update(request, pk):
             # Если количество изменилось, создаем запись в истории
             if new_product.quantity != old_quantity:
                 if new_product.quantity > old_quantity:
-                    # Поступление
                     History.objects.create(
                         type='receipt',
                         product=new_product,
@@ -98,7 +105,6 @@ def product_update(request, pk):
                         user=request.user
                     )
                 else:
-                    # Утилизация (уменьшение количества)
                     History.objects.create(
                         type='disposal',
                         product=new_product,
@@ -174,6 +180,9 @@ def sale_view(request):
         
         try:
             with transaction.atomic():
+                sale_items = []
+                total_amount = 0
+                
                 for product_id, item in cart.items():
                     product = Product.objects.select_for_update().get(pk=product_id)
                     quantity = item['quantity']
@@ -185,19 +194,51 @@ def sale_view(request):
                     product.quantity -= quantity
                     product.save()
                     
-                    # Создаем запись в истории
-                    History.objects.create(
+                    # Считаем сумму
+                    item_total = product.price * quantity
+                    total_amount += item_total
+                    
+                    # Создаем запись в истории с суммой
+                    history = History.objects.create(
                         type='sale',
                         product=product,
                         quantity=quantity,
+                        total_price=item_total,
                         user=request.user
                     )
+                    
+                    sale_items.append({
+                        'product': product,
+                        'quantity': quantity,
+                        'price': product.price,
+                        'total': item_total,
+                        'unit': product.get_unit_display()
+                    })
+                
+                # Сохраняем данные чека в сессию для PDF
+                request.session['last_receipt'] = {
+                    'items': [
+                        {
+                            'name': item['product'].name,
+                            'quantity': item['quantity'],
+                            'price': float(item['price']),
+                            'total': float(item['total']),
+                            'unit': item['unit']
+                        } for item in sale_items
+                    ],
+                    'total': float(total_amount),
+                    'date': timezone.now().strftime('%d.%m.%Y %H:%M'),
+                    'cashier': request.user.username
+                }
                 
                 # Очищаем корзину
                 request.session['cart'] = {}
                 request.session.modified = True
                 
                 messages.success(request, 'Продажа успешно оформлена!')
+                
+                # Перенаправляем на страницу с чеком
+                return redirect('receipt_view')
                 
         except Exception as e:
             messages.error(request, f'Ошибка при оформлении продажи: {str(e)}')
@@ -286,3 +327,147 @@ def clear_cart(request):
     request.session.modified = True
     messages.success(request, 'Корзина очищена')
     return redirect('sale')
+
+@login_required
+def barcode_add(request):
+    """Добавление товара по штрих-коду"""
+    if request.method == 'POST':
+        form = BarcodeForm(request.POST)
+        if form.is_valid():
+            barcode = form.cleaned_data['barcode']
+            quantity = form.cleaned_data['quantity']
+            
+            try:
+                # Ищем товар по штрих-коду
+                product = Product.objects.get(barcode=barcode)
+                
+                # Проверяем наличие
+                if product.quantity < quantity:
+                    messages.error(request, f'Недостаточно товара "{product.name}" на складе')
+                    return redirect('barcode_add')
+                
+                if product.expiration_date < date.today():
+                    messages.error(request, f'Товар "{product.name}" просрочен')
+                    return redirect('barcode_add')
+                
+                # Добавляем в корзину
+                cart = request.session.get('cart', {})
+                product_id = str(product.id)
+                
+                if product_id in cart:
+                    cart[product_id]['quantity'] += quantity
+                else:
+                    cart[product_id] = {
+                        'quantity': quantity,
+                        'price': str(product.price)
+                    }
+                
+                request.session['cart'] = cart
+                request.session.modified = True
+                
+                messages.success(request, f'Товар "{product.name}" добавлен в корзину')
+                return redirect('sale')
+                
+            except Product.DoesNotExist:
+                # Если товар не найден, предлагаем создать
+                request.session['temp_barcode'] = barcode
+                messages.warning(request, f'Товар со штрих-кодом {barcode} не найден. Создайте новый товар.')
+                return redirect('product_create')
+    else:
+        form = BarcodeForm()
+    
+    return render(request, 'cash_app/barcode.html', {'form': form})
+
+@login_required
+def receipt_view(request):
+    """Просмотр чека"""
+    receipt = request.session.get('last_receipt')
+    if not receipt:
+        messages.warning(request, 'Нет данных для отображения чека')
+        return redirect('sale')
+    
+    return render(request, 'cash_app/receipt.html', {'receipt': receipt})
+
+@login_required
+def receipt_pdf(request):
+    """Генерация PDF чека"""
+    receipt = request.session.get('last_receipt')
+    if not receipt:
+        messages.warning(request, 'Нет данных для генерации чека')
+        return redirect('sale')
+    
+    # Создаем PDF
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, 
+                           rightMargin=72, leftMargin=72,
+                           topMargin=72, bottomMargin=18)
+    
+    styles = getSampleStyleSheet()
+    story = []
+    
+    # Заголовок
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        alignment=1,  # Center alignment
+        spaceAfter=30
+    )
+    
+    story.append(Paragraph("КАССОВЫЙ ЧЕК", title_style))
+    
+    # Информация о продаже
+    info_style = ParagraphStyle(
+        'Info',
+        parent=styles['Normal'],
+        fontSize=12,
+        spaceAfter=5
+    )
+    
+    story.append(Paragraph(f"Дата: {receipt['date']}", info_style))
+    story.append(Paragraph(f"Кассир: {receipt['cashier']}", info_style))
+    story.append(Spacer(1, 20))
+    
+    # Таблица с товарами
+    data = [['№', 'Товар', 'Кол-во', 'Цена', 'Сумма']]
+    for i, item in enumerate(receipt['items'], 1):
+        data.append([
+            str(i),
+            item['name'],
+            f"{item['quantity']} {item['unit']}",
+            f"{item['price']:.2f} ₽",
+            f"{item['total']:.2f} ₽"
+        ])
+    
+    # Итоговая строка
+    data.append(['', '', '', 'ИТОГО:', f"{receipt['total']:.2f} ₽"])
+    
+    table = Table(data, colWidths=[30, 200, 70, 70, 80])
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 12),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -2), colors.beige),
+        ('GRID', (0, 0), (-1, -2), 1, colors.black),
+        ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.lightgrey),
+        ('ALIGN', (3, 1), (4, -1), 'RIGHT'),
+    ]))
+    
+    story.append(table)
+    story.append(Spacer(1, 30))
+    
+    # Подпись
+    story.append(Paragraph("Спасибо за покупку!", info_style))
+    
+    doc.build(story)
+    
+    # Возвращаем PDF
+    buffer.seek(0)
+    response = HttpResponse(buffer, content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="receipt_{receipt["date"].replace(" ", "_").replace(":", "-")}.pdf"'
+    
+    return response

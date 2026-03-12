@@ -6,9 +6,14 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h1><i class="bi bi-box"></i> Управление складом</h1>
-    <a href="{% url 'product_create' %}" class="btn btn-success">
-        <i class="bi bi-plus-lg"></i> Добавить товар
-    </a>
+    <div>
+        <a href="{% url 'barcode_add' %}" class="btn btn-info me-2">
+            <i class="bi bi-upc-scan"></i> Товар по штрих-коду
+        </a>
+        <a href="{% url 'product_create' %}" class="btn btn-success">
+            <i class="bi bi-plus-lg"></i> Добавить товар
+        </a>
+    </div>
 </div>
 
 <!-- Статистика -->
@@ -47,7 +52,9 @@
                 <thead class="table-light">
                     <tr>
                         <th>Название</th>
+                        <th>Штрих-код</th>
                         <th>Количество</th>
+                        <th>Ед.</th>
                         <th>Цена</th>
                         <th>Срок годности</th>
                         <th>Статус</th>
@@ -58,7 +65,15 @@
                     {% for product in products %}
                     <tr class="{% if product.get_status == 'expired' %}table-danger{% elif product.get_status == 'expiring_soon' %}table-warning{% endif %}">
                         <td>{{ product.name }}</td>
-                        <td>{{ product.quantity }} шт</td>
+                        <td>
+                            {% if product.barcode %}
+                                <span class="badge bg-secondary">{{ product.barcode }}</span>
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ product.quantity }}</td>
+                        <td>{{ product.get_unit_display }}</td>
                         <td>{{ product.price }} ₽</td>
                         <td>{{ product.expiration_date|date:"d.m.Y" }}</td>
                         <td>
@@ -81,7 +96,7 @@
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="6" class="text-center py-4">
+                        <td colspan="8" class="text-center py-4">
                             <i class="bi bi-inbox fs-1 d-block text-muted"></i>
                             <p class="text-muted">Нет товаров на складе</p>
                             <a href="{% url 'product_create' %}" class="btn btn-primary">

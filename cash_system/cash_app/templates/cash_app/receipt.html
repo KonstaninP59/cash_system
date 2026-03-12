@@ -1,0 +1,68 @@
+{% extends 'cash_app/base.html' %}
+{% load static %}
+
+{% block title %} - Чек{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card shadow">
+            <div class="card-header bg-success text-white">
+                <h4 class="mb-0"><i class="bi bi-receipt"></i> Чек операции</h4>
+            </div>
+            <div class="card-body">
+                <div class="text-center mb-4">
+                    <h2>КАССОВЫЙ ЧЕК</h2>
+                    <p class="text-muted">{{ receipt.date }}</p>
+                    <p class="text-muted">Кассир: {{ receipt.cashier }}</p>
+                </div>
+                
+                <table class="table table-sm">
+                    <thead class="table-light">
+                        <tr>
+                            <th>№</th>
+                            <th>Товар</th>
+                            <th>Кол-во</th>
+                            <th>Цена</th>
+                            <th>Сумма</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in receipt.items %}
+                        <tr>
+                            <td>{{ forloop.counter }}</td>
+                            <td>{{ item.name }}</td>
+                            <td>{{ item.quantity }} {{ item.unit }}</td>
+                            <td>{{ item.price }} ₽</td>
+                            <td class="text-end">{{ item.total }} ₽</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot class="table-light">
+                        <tr>
+                            <th colspan="4" class="text-end">ИТОГО:</th>
+                            <th class="text-end">{{ receipt.total }} ₽</th>
+                        </tr>
+                    </tfoot>
+                </table>
+                
+                <div class="text-center mt-4">
+                    <p class="mb-1">Спасибо за покупку!</p>
+                    <p class="text-muted small">Чек является фискальным документом</p>
+                </div>
+                
+                <hr>
+                
+                <div class="d-flex justify-content-between">
+                    <a href="{% url 'sale' %}" class="btn btn-primary">
+                        <i class="bi bi-cart"></i> Новая продажа
+                    </a>
+                    <a href="{% url 'receipt_pdf' %}" class="btn btn-success" target="_blank">
+                        <i class="bi bi-file-pdf"></i> Скачать PDF
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
