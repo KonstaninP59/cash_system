@@ -1,0 +1,110 @@
+/* Дополнительные стили */
+body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+main {
+    flex: 1;
+}
+
+.footer {
+    margin-top: auto;
+}
+
+/* Стили для карточек товаров */
+.card {
+    transition: transform 0.2s;
+}
+
+.card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+/* Стили для таблиц */
+.table-hover tbody tr:hover {
+    background-color: rgba(0,123,255,0.05);
+}
+
+/* Адаптивность для мобильных устройств */
+@media (max-width: 768px) {
+    .display-4 {
+        font-size: 2rem;
+    }
+}
+
+/* Стили для статусов */
+.badge {
+    font-size: 0.9em;
+    padding: 0.5em 0.7em;
+}
+
+/* Анимации */
+.alert {
+    animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        transform: translateY(-100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+/* Стили для sticky корзины */
+.sticky-top {
+    z-index: 1000;
+}
+
+/* Цветовые схемы для просроченных товаров */
+.table-danger {
+    background-color: rgba(220, 53, 69, 0.1) !important;
+}
+
+.table-warning {
+    background-color: rgba(255, 193, 7, 0.1) !important;
+}
+
+/* Стили для кнопок */
+.btn {
+    border-radius: 5px;
+}
+
+.btn-sm {
+    border-radius: 3px;
+}
+
+/* Стили для форм */
+.form-control:focus {
+    border-color: #80bdff;
+    box-shadow: 0 0 0 0.2rem rgba(0,123,255,0.25);
+}
+
+/* Стили для навигации */
+.navbar-brand {
+    font-weight: 500;
+}
+
+.nav-link.active {
+    font-weight: 500;
+    background-color: rgba(255,255,255,0.1);
+    border-radius: 5px;
+}
+
+/* Стили для карточек статистики */
+.card.text-white .card-body {
+    padding: 1.25rem;
+}
+
+.card.text-white .display-4 {
+    font-size: 2.5rem;
+    font-weight: 300;
+    line-height: 1.2;
+    margin-bottom: 0;
+}

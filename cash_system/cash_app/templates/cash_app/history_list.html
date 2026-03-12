@@ -1,0 +1,88 @@
+{% extends 'cash_app/base.html' %}
+{% load static %}
+
+{% block title %} - История{% endblock %}
+
+{% block content %}
+<h1 class="mb-4"><i class="bi bi-clock-history"></i> История операций</h1>
+
+<!-- Фильтры -->
+<div class="card shadow mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label">Тип операции</label>
+                <select name="type" class="form-select">
+                    <option value="">Все типы</option>
+                    {% for key, value in type_choices %}
+                        <option value="{{ key }}" {% if current_type == key %}selected{% endif %}>
+                            {{ value }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Товар</label>
+                <select name="product" class="form-select">
+                    <option value="">Все товары</option>
+                    {% for product in products %}
+                        <option value="{{ product.id }}" {% if current_product == product.id|stringformat:"i" %}selected{% endif %}>
+                            {{ product.name }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-4 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="bi bi-funnel"></i> Применить фильтры
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- История -->
+<div class="card shadow">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead class="table-light">
+                    <tr>
+                        <th>Дата и время</th>
+                        <th>Тип операции</th>
+                        <th>Товар</th>
+                        <th>Количество</th>
+                        <th>Пользователь</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for record in history %}
+                    <tr>
+                        <td>{{ record.date|date:"d.m.Y H:i" }}</td>
+                        <td>
+                            {% if record.type == 'receipt' %}
+                                <span class="badge bg-success">Поступление</span>
+                            {% elif record.type == 'disposal' %}
+                                <span class="badge bg-warning text-dark">Утилизация</span>
+                            {% elif record.type == 'sale' %}
+                                <span class="badge bg-info">Продажа</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ record.product.name }}</td>
+                        <td>{{ record.quantity }} шт</td>
+                        <td>{{ record.user.username|default:"-" }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="5" class="text-center py-4">
+                            <i class="bi bi-clock-history fs-1 d-block text-muted"></i>
+                            <p class="text-muted">История операций пуста</p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,113 @@
+{% extends 'cash_app/base.html' %}
+{% load static %}
+
+{% block title %} - Продажи{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Левая колонка - товары -->
+    <div class="col-md-8">
+        <div class="card shadow mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-box"></i> Доступные товары</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    {% for product in products %}
+                    <div class="col-md-4 mb-3">
+                        <div class="card h-100 {% if product.is_expiring_soon %}border-warning{% endif %}">
+                            <div class="card-body">
+                                <h6 class="card-title">{{ product.name }}</h6>
+                                <p class="card-text">
+                                    <span class="badge bg-secondary">В наличии: {{ product.quantity }} шт</span><br>
+                                    <strong>Цена: {{ product.price }} ₽</strong><br>
+                                    <small class="text-muted">Годен до: {{ product.expiration_date|date:"d.m.Y" }}</small>
+                                </p>
+                                
+                                {% if product.is_expiring_soon %}
+                                    <div class="alert alert-warning py-1 px-2 small mb-2">
+                                        <i class="bi bi-exclamation-triangle"></i> Скоро истекает
+                                    </div>
+                                {% endif %}
+                                
+                                <form method="post" action="{% url 'add_to_cart' %}" class="mt-2">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="product_id" value="{{ product.id }}">
+                                    <div class="input-group">
+                                        <input type="number" name="quantity" class="form-control form-control-sm" 
+                                               value="1" min="1" max="{{ product.quantity }}">
+                                        <button type="submit" class="btn btn-sm btn-success">
+                                            <i class="bi bi-cart-plus"></i>
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    {% empty %}
+                    <div class="col-12 text-center py-4">
+                        <i class="bi bi-box fs-1 d-block text-muted"></i>
+                        <p class="text-muted">Нет доступных товаров для продажи</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Правая колонка - корзина -->
+    <div class="col-md-4">
+        <div class="card shadow sticky-top" style="top: 20px;">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0"><i class="bi bi-cart"></i> Корзина</h5>
+            </div>
+            <div class="card-body">
+                {% if cart_items %}
+                    <div class="list-group mb-3">
+                        {% for item in cart_items %}
+                        <div class="list-group-item">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h6 class="mb-1">{{ item.product.name }}</h6>
+                                    <small>{{ item.quantity }} шт × {{ item.product.price }} ₽</small>
+                                </div>
+                                <div>
+                                    <strong>{{ item.subtotal }} ₽</strong>
+                                    <a href="{% url 'remove_from_cart' item.product.id %}" 
+                                       class="btn btn-sm btn-danger ms-2" title="Удалить">
+                                        <i class="bi bi-x"></i>
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    
+                    <div class="d-flex justify-content-between mb-3">
+                        <h5>Итого:</h5>
+                        <h5 class="text-success">{{ total }} ₽</h5>
+                    </div>
+                    
+                    <form method="post" action="{% url 'sale' %}">
+                        {% csrf_token %}
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-success">
+                                <i class="bi bi-cash"></i> Оформить продажу
+                            </button>
+                            <a href="{% url 'clear_cart' %}" class="btn btn-outline-danger">
+                                <i class="bi bi-trash"></i> Очистить корзину
+                            </a>
+                        </div>
+                    </form>
+                {% else %}
+                    <div class="text-center py-4">
+                        <i class="bi bi-cart fs-1 d-block text-muted"></i>
+                        <p class="text-muted">Корзина пуста</p>
+                        <small class="text-muted">Добавьте товары из списка слева</small>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
