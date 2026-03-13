@@ -1,0 +1,148 @@
+{% extends 'cash_app/base.html' %}
+{% load static %}
+
+{% block title %} - Моя эффективность{% endblock %}
+
+{% block content %}
+<h1 class="mb-4"><i class="bi bi-graph-up"></i> Моя эффективность</h1>
+
+<!-- Карточки с ключевыми показателями -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card text-white bg-primary">
+            <div class="card-body">
+                <h5 class="card-title">Месячный план</h5>
+                <p class="display-6">{{ plan.monthly_target }} ₽</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white {% if completion_percentage >= 100 %}bg-success{% else %}bg-info{% endif %}">
+            <div class="card-body">
+                <h5 class="card-title">Продано за месяц</h5>
+                <p class="display-6">{{ monthly_sales|floatformat:2 }} ₽</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-warning">
+            <div class="card-body">
+                <h5 class="card-title">Осталось выполнить</h5>
+                <p class="display-6">{{ remaining_amount|floatformat:2 }} ₽</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-secondary">
+            <div class="card-body">
+                <h5 class="card-title">Средний чек в день</h5>
+                <p class="display-6">{{ daily_average|floatformat:2 }} ₽</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Прогресс бар выполнения плана -->
+<div class="card shadow mb-4">
+    <div class="card-header bg-primary text-white">
+        <h5 class="mb-0">Прогресс выполнения плана</h5>
+    </div>
+    <div class="card-body">
+        <div class="progress mb-3" style="height: 30px;">
+            <div class="progress-bar {% if completion_percentage >= 100 %}bg-success{% elif completion_percentage >= 75 %}bg-info{% elif completion_percentage >= 50 %}bg-warning{% else %}bg-danger{% endif %}" 
+                role="progressbar" 
+                style="--width: {{ completion_percentage }}%; width: var(--width);" 
+                aria-valuenow="{{ completion_percentage }}" 
+                aria-valuemin="0" 
+                aria-valuemax="100">
+                {{ completion_percentage }}%
+            </div>
+        </div>  
+        <p class="text-muted">
+            <i class="bi bi-info-circle"></i>
+            Выполнено {{ completion_percentage }}% от месячного плана
+        </p>
+    </div>
+</div>
+
+<!-- График продаж по дням -->
+<div class="card shadow mb-4">
+    <div class="card-header bg-primary text-white">
+        <h5 class="mb-0">Продажи по дням</h5>
+    </div>
+    <div class="card-body">
+        <canvas id="salesChart" style="height: 300px;"></canvas>
+    </div>
+</div>
+
+<!-- Дополнительная статистика -->
+<div class="row">
+    <div class="col-md-6">
+        <div class="card shadow mb-4">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0">Продажи за сегодня</h5>
+            </div>
+            <div class="card-body text-center">
+                <p class="display-4">{{ today_total|floatformat:2 }} ₽</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card shadow mb-4">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0">Продажи за неделю</h5>
+            </div>
+            <div class="card-body text-center">
+                <p class="display-4">{{ week_total|floatformat:2 }} ₽</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var canvas = document.getElementById('salesChart');
+    if (canvas) {
+        var ctx = canvas.getContext('2d');
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: '{{ labels|safe }}',
+                datasets: [{
+                    label: 'Продажи за день (₽)',
+                    data: '{{ daily_data|safe }}',
+                    backgroundColor: 'rgba(13, 110, 253, 0.2)',
+                    borderColor: 'rgba(13, 110, 253, 1)',
+                    borderWidth: 2,
+                    tension: 0.1,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return value + ' ₽';
+                            }
+                        }
+                    }
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return context.raw + ' ₽';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

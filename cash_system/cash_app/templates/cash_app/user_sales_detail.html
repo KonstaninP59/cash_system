@@ -1,0 +1,86 @@
+{% extends 'cash_app/base.html' %}
+{% load static %}
+
+{% block title %} - Продажи пользователя{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="bi bi-person"></i> Продажи: {{ target_user.username }}</h1>
+    <a href="{% url 'dashboard' %}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left"></i> Назад к дашборду
+    </a>
+</div>
+
+<!-- Статистика -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card text-white bg-primary">
+            <div class="card-body">
+                <h5 class="card-title">Продажи за месяц</h5>
+                <p class="display-4">{{ total|floatformat:2 }} ₽</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card text-white {% if plan and plan.monthly_target > 0 %}bg-info{% else %}bg-secondary{% endif %}">
+            <div class="card-body">
+                <h5 class="card-title">План на месяц</h5>
+                <p class="display-4">
+                    {% if plan %}
+                        {{ plan.monthly_target }} ₽
+                        <small class="d-block fs-6">Выполнение: {{ plan.get_completion_percentage }}%</small>
+                    {% else %}
+                        Не установлен
+                    {% endif %}
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Список продаж -->
+<div class="card shadow">
+    <div class="card-header bg-success text-white">
+        <h5 class="mb-0">Детализация продаж за текущий месяц</h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead class="table-light">
+                    <tr>
+                        <th>Дата и время</th>
+                        <th>Товар</th>
+                        <th>Количество</th>
+                        <th>Сумма</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for sale in sales %}
+                    <tr>
+                        <td>{{ sale.date|date:"d.m.Y H:i" }}</td>
+                        <td>{{ sale.product.name }}</td>
+                        <td>{{ sale.quantity }} {{ sale.product.get_unit_display }}</td>
+                        <td>{{ sale.total_price }} ₽</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="4" class="text-center py-4">
+                            <i class="bi bi-cart fs-1 d-block text-muted"></i>
+                            <p class="text-muted">У пользователя нет продаж в этом месяце</p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                {% if sales %}
+                <tfoot class="table-light">
+                    <tr>
+                        <th colspan="3" class="text-end">ИТОГО:</th>
+                        <th>{{ total|floatformat:2 }} ₽</th>
+                    </tr>
+                </tfoot>
+                {% endif %}
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

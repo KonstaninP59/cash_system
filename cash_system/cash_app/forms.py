@@ -1,6 +1,7 @@
 from django import forms
 from django.contrib.auth.forms import AuthenticationForm
-from .models import Product
+from django.contrib.auth.models import User
+from .models import Product, SalesPlan
 
 class LoginForm(AuthenticationForm):
     """Форма входа"""
@@ -60,4 +61,35 @@ class SaleForm(forms.Form):
         min_value=1,
         widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'style': 'width: 80px;'})
     )
-    
+
+class DisposalForm(forms.Form):
+    """Форма для списания товара"""
+    quantity = forms.IntegerField(
+        label='Количество для списания',
+        min_value=1,
+        widget=forms.NumberInput(attrs={'class': 'form-control'})
+    )
+    reason = forms.CharField(
+        label='Причина списания',
+        max_length=200,
+        required=False,
+        widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Например: просрочка, брак'})
+    )
+
+class SalesPlanForm(forms.ModelForm):
+    """Форма для плана продаж"""
+    class Meta:
+        model = SalesPlan
+        fields = ['monthly_target']
+        widgets = {
+            'monthly_target': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'step': '0.01',
+                'min': '0',
+                'placeholder': 'Сумма плана на месяц'
+            }),
+        }
+        labels = {
+            'monthly_target': 'Месячный план (₽)',
+        }
+        

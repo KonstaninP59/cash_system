@@ -1,13 +1,15 @@
+from django.contrib.auth.models import User
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import login, logout
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib import messages
 from django.db import transaction
-from django.http import HttpResponse
+from django.db.models import Q, Sum, Count
+from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
-from datetime import date, timedelta
-from .models import Product, History
-from .forms import LoginForm, ProductForm, SaleForm, BarcodeForm
+from datetime import date, timedelta, datetime
+from .models import Product, History, SalesPlan
+from .forms import LoginForm, ProductForm, SaleForm, BarcodeForm, DisposalForm, SalesPlanForm
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
@@ -15,6 +17,12 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
 from io import BytesIO
 import json
+import calendar
+
+
+def is_admin(user):
+    """Проверка, является ли пользователь администратором"""
+    return user.is_staff or user.is_superuser
 
 def login_view(request):
     """Вход в систему"""
@@ -44,19 +52,37 @@ def index(request):
 
 @login_required
 def product_list(request):
-    """Список товаров"""
+    """Список товаров с фильтрацией по статусу"""
+    # Получаем параметр фильтра из URL
+    filter_type = request.GET.get('filter', 'all')
+    
+    # Базовый запрос
     products = Product.objects.all()
     
-    # Подсчет статистики
-    total_products = products.count()
-    expired_count = sum(1 for p in products if p.is_expired())
-    expiring_soon_count = sum(1 for p in products if p.is_expiring_soon())
+    # Применяем фильтр в зависимости от параметра
+    if filter_type == 'expired':
+        products = [p for p in products if p.is_expired()]
+        filter_title = "Просроченные товары"
+    elif filter_type == 'expiring_soon':
+        products = [p for p in products if p.is_expiring_soon()]
+        filter_title = "Товары с истекающим сроком годности"
+    else:
+        filter_type = 'all'
+        filter_title = "Все товары"
+    
+    # Подсчет статистики (для всех товаров, без фильтра)
+    all_products = Product.objects.all()
+    total_products = all_products.count()
+    expired_count = sum(1 for p in all_products if p.is_expired())
+    expiring_soon_count = sum(1 for p in all_products if p.is_expiring_soon())
     
     context = {
         'products': products,
         'total_products': total_products,
         'expired_count': expired_count,
         'expiring_soon_count': expiring_soon_count,
+        'current_filter': filter_type,
+        'filter_title': filter_title,
     }
     return render(request, 'cash_app/product_list.html', context)
 
@@ -80,7 +106,14 @@ def product_create(request):
             messages.success(request, 'Товар успешно добавлен!')
             return redirect('product_list')
     else:
-        form = ProductForm()
+        # Проверяем, есть ли временный штрих-код из формы добавления по штрих-коду
+        temp_barcode = request.session.get('temp_barcode')
+        if temp_barcode:
+            form = ProductForm(initial={'barcode': temp_barcode})
+            # Очищаем временный штрих-код из сессии
+            del request.session['temp_barcode']
+        else:
+            form = ProductForm()
     
     return render(request, 'cash_app/product_form.html', {'form': form, 'title': 'Добавление товара'})
 
@@ -143,6 +176,54 @@ def product_delete(request, pk):
         return redirect('product_list')
     
     return render(request, 'cash_app/product_confirm_delete.html', {'product': product})
+
+@login_required
+def product_disposal(request, pk):
+    """Списание просроченного товара"""
+    product = get_object_or_404(Product, pk=pk)
+    
+    # Проверяем, действительно ли товар просрочен
+    if not product.is_expired():
+        messages.error(request, 'Можно списывать только просроченные товары!')
+        return redirect('product_list')
+    
+    if request.method == 'POST':
+        form = DisposalForm(request.POST)
+        if form.is_valid():
+            quantity = form.cleaned_data['quantity']
+            reason = form.cleaned_data['reason']
+            
+            if quantity > product.quantity:
+                messages.error(request, f'Нельзя списать больше, чем есть на складе! Доступно: {product.quantity}')
+                return redirect('product_disposal', pk=product.pk)
+            
+            if quantity <= 0:
+                messages.error(request, 'Количество должно быть больше 0')
+                return redirect('product_disposal', pk=product.pk)
+            
+            # Уменьшаем количество товара
+            product.quantity -= quantity
+            product.save()
+            
+            # Создаем запись в истории
+            History.objects.create(
+                type='disposal',
+                product=product,
+                quantity=quantity,
+                user=request.user,
+                reason=reason
+            )
+            
+            messages.success(request, f'Списано {quantity} {product.get_unit_display()} товара "{product.name}"')
+            return redirect('product_list')
+    else:
+        form = DisposalForm(initial={'quantity': product.quantity})
+    
+    context = {
+        'product': product,
+        'form': form,
+    }
+    return render(request, 'cash_app/product_disposal.html', context)
 
 @login_required
 def history_list(request):
@@ -471,3 +552,218 @@ def receipt_pdf(request):
     response['Content-Disposition'] = f'attachment; filename="receipt_{receipt["date"].replace(" ", "_").replace(":", "-")}.pdf"'
     
     return response
+
+@login_required
+def dashboard_view(request):
+    """Дашборд эффективности"""
+    now = timezone.now()
+    start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    start_of_year = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+    
+    # Для обычного пользователя - только свои данные
+    if not is_admin(request.user):
+        try:
+            plan = SalesPlan.objects.get(user=request.user)
+        except SalesPlan.DoesNotExist:
+            plan = SalesPlan.objects.create(user=request.user, monthly_target=0)
+        
+        # Продажи пользователя за текущий месяц
+        user_sales = History.objects.filter(
+            type='sale',
+            user=request.user,
+            date__gte=start_of_month
+        )
+        monthly_sales = sum(float(s.total_price or 0) for s in user_sales)
+        
+        # Продажи за сегодня
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        today_sales = History.objects.filter(
+            type='sale',
+            user=request.user,
+            date__gte=today_start
+        )
+        today_total = sum(float(s.total_price or 0) for s in today_sales)
+        
+        # Продажи за неделю
+        week_start = now - timedelta(days=7)
+        week_sales = History.objects.filter(
+            type='sale',
+            user=request.user,
+            date__gte=week_start
+        )
+        week_total = sum(float(s.total_price or 0) for s in week_sales)
+        
+        # Статистика по дням для графика
+        days_in_month = calendar.monthrange(now.year, now.month)[1]
+        daily_data = []
+        labels = []
+        
+        for day in range(1, days_in_month + 1):
+            day_date = datetime(now.year, now.month, day).date()
+            day_start = timezone.make_aware(datetime.combine(day_date, datetime.min.time()))
+            day_end = timezone.make_aware(datetime.combine(day_date, datetime.max.time()))
+            
+            day_sales = History.objects.filter(
+                type='sale',
+                user=request.user,
+                date__range=[day_start, day_end]
+            )
+            day_total = sum(float(s.total_price or 0) for s in day_sales)
+            
+            daily_data.append(day_total)
+            labels.append(day)
+        
+        context = {
+            'plan': plan,
+            'monthly_sales': monthly_sales,
+            'completion_percentage': plan.get_completion_percentage(),
+            'remaining_amount': plan.get_remaining_amount(),
+            'daily_average': plan.get_daily_average(),
+            'today_total': today_total,
+            'week_total': week_total,
+            'daily_data': json.dumps(daily_data),
+            'labels': json.dumps(labels),
+            'is_admin': False,
+        }
+        
+        return render(request, 'cash_app/dashboard_user.html', context)
+    
+    # Для администратора - общая статистика
+    else:
+        # Общая выручка за месяц
+        total_monthly_sales = History.objects.filter(
+            type='sale',
+            date__gte=start_of_month
+        ).aggregate(total=Sum('total_price'))['total'] or 0
+        
+        # Общая выручка за год
+        total_yearly_sales = History.objects.filter(
+            type='sale',
+            date__gte=start_of_year
+        ).aggregate(total=Sum('total_price'))['total'] or 0
+        
+        # Количество продаж
+        sales_count = History.objects.filter(
+            type='sale',
+            date__gte=start_of_month
+        ).count()
+        
+        # Топ-3 продавца
+        top_sellers = []
+        for user in User.objects.filter(is_staff=False, is_active=True):
+            user_sales = History.objects.filter(
+                type='sale',
+                user=user,
+                date__gte=start_of_month
+            ).aggregate(total=Sum('total_price'))['total'] or 0
+            
+            try:
+                plan = SalesPlan.objects.get(user=user)
+                plan_amount = plan.monthly_target
+                completion = plan.get_completion_percentage()
+            except SalesPlan.DoesNotExist:
+                plan_amount = 0
+                completion = 0
+            
+            top_sellers.append({
+                'user': user,
+                'sales': user_sales,
+                'plan': plan_amount,
+                'completion': completion
+            })
+        
+        top_sellers = sorted(top_sellers, key=lambda x: x['sales'], reverse=True)[:3]
+        
+        # Статистика по планам
+        users_with_plans = SalesPlan.objects.all().select_related('user')
+        
+        # Продажи по дням для графика
+        days_in_month = calendar.monthrange(now.year, now.month)[1]
+        daily_data = []
+        labels = []
+        
+        for day in range(1, days_in_month + 1):
+            day_date = datetime(now.year, now.month, day).date()
+            day_start = timezone.make_aware(datetime.combine(day_date, datetime.min.time()))
+            day_end = timezone.make_aware(datetime.combine(day_date, datetime.max.time()))
+            
+            day_sales = History.objects.filter(
+                type='sale',
+                date__range=[day_start, day_end]
+            )
+            day_total = sum(float(s.total_price or 0) for s in day_sales)
+            
+            daily_data.append(day_total)
+            labels.append(day)
+        
+        context = {
+            'total_monthly_sales': total_monthly_sales,
+            'total_yearly_sales': total_yearly_sales,
+            'sales_count': sales_count,
+            'average_check': total_monthly_sales / sales_count if sales_count > 0 else 0,
+            'top_sellers': top_sellers,
+            'users_with_plans': users_with_plans,
+            'daily_data': json.dumps(daily_data),
+            'labels': json.dumps(labels),
+            'is_admin': True,
+        }
+        
+        return render(request, 'cash_app/dashboard_admin.html', context)
+
+@login_required
+@user_passes_test(is_admin)
+def plan_edit(request, user_id):
+    """Редактирование плана пользователя (только для админа)"""
+    user = get_object_or_404(User, pk=user_id)
+    plan, created = SalesPlan.objects.get_or_create(user=user)
+    
+    if request.method == 'POST':
+        form = SalesPlanForm(request.POST, instance=plan)
+        if form.is_valid():
+            plan = form.save(commit=False)
+            plan.updated_by = request.user
+            plan.save()
+            messages.success(request, f'План для пользователя {user.username} успешно обновлен')
+            return redirect('dashboard')
+    else:
+        form = SalesPlanForm(instance=plan)
+    
+    context = {
+        'form': form,
+        'target_user': user,
+        'plan': plan,
+    }
+    return render(request, 'cash_app/plan_edit.html', context)
+
+@login_required
+def user_sales_detail(request, user_id):
+    """Детальная информация о продажах пользователя (только для админа)"""
+    if not is_admin(request.user):
+        messages.error(request, 'У вас нет прав для просмотра этой страницы')
+        return redirect('dashboard')
+    
+    target_user = get_object_or_404(User, pk=user_id)
+    now = timezone.now()
+    start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    
+    # Продажи пользователя за месяц
+    sales = History.objects.filter(
+        type='sale',
+        user=target_user,
+        date__gte=start_of_month
+    ).select_related('product').order_by('-date')
+    
+    total = sum(float(s.total_price or 0) for s in sales)
+    
+    try:
+        plan = SalesPlan.objects.get(user=target_user)
+    except SalesPlan.DoesNotExist:
+        plan = None
+    
+    context = {
+        'target_user': target_user,
+        'sales': sales,
+        'total': total,
+        'plan': plan,
+    }
+    return render(request, 'cash_app/user_sales_detail.html', context)

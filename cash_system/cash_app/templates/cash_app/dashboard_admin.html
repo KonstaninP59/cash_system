@@ -1,0 +1,171 @@
+{% extends 'cash_app/base.html' %}
+{% load static %}
+
+{% block title %} - Дашборд эффективности{% endblock %}
+
+{% block content %}
+<h1 class="mb-4"><i class="bi bi-graph-up"></i> Дашборд эффективности (Администратор)</h1>
+
+<!-- Общая статистика -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card text-white bg-primary">
+            <div class="card-body">
+                <h5 class="card-title">Выручка за месяц</h5>
+                <p class="display-6">{{ total_monthly_sales|floatformat:2 }} ₽</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-success">
+            <div class="card-body">
+                <h5 class="card-title">Выручка за год</h5>
+                <p class="display-6">{{ total_yearly_sales|floatformat:2 }} ₽</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-info">
+            <div class="card-body">
+                <h5 class="card-title">Количество продаж</h5>
+                <p class="display-6">{{ sales_count }}</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-warning">
+            <div class="card-body">
+                <h5 class="card-title">Средний чек</h5>
+                <p class="display-6">{{ average_check|floatformat:2 }} ₽</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- График продаж по дням -->
+<div class="card shadow mb-4">
+    <div class="card-header bg-primary text-white">
+        <h5 class="mb-0">Продажи по дням (текущий месяц)</h5>
+    </div>
+    <div class="card-body">
+        <canvas id="salesChart" style="height: 300px;"></canvas>
+    </div>
+</div>
+
+<!-- Все планы продаж -->
+<div class="card shadow">
+    <div class="card-header bg-info text-white">
+        <h5 class="mb-0">Управление планами продаж</h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Пользователь</th>
+                        <th>Текущий план</th>
+                        <th>Продажи за месяц</th>
+                        <th>Выполнение</th>
+                        <th>Последнее обновление</th>
+                        <th>Кем обновлено</th>
+                        <th>Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for plan in users_with_plans %}
+                    <tr>
+                        <td>{{ plan.user.username }}</td>
+                        <td>{{ plan.monthly_target }} ₽</td>
+                        <td>{{ plan.get_current_month_sales|floatformat:2 }} ₽</td>
+                        <td>
+                            <div class="progress" style="height: 20px;">
+                                <div class="progress-bar 
+                                    {% if plan.get_completion_percentage >= 100 %}bg-success
+                                    {% elif plan.get_completion_percentage >= 75 %}bg-info
+                                    {% elif plan.get_completion_percentage >= 50 %}bg-warning
+                                    {% else %}bg-danger{% endif %}"
+                                    id="progress-{{ plan.id }}"
+                                    role="progressbar"
+                                    data-width="{{ plan.get_completion_percentage }}"
+                                    aria-valuenow="{{ plan.get_completion_percentage }}"
+                                    aria-valuemin="0"
+                                    aria-valuemax="100">
+                                    {{ plan.get_completion_percentage }}%
+                                </div>
+                            </div>
+                        </td>
+                        <td>{{ plan.updated_at|date:"d.m.Y H:i" }}</td>
+                        <td>{{ plan.updated_by.username|default:"—" }}</td>
+                        <td>
+                            <a href="{% url 'plan_edit' plan.user.id %}" class="btn btn-sm btn-primary">
+                                <i class="bi bi-pencil"></i> Редактировать
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="text-center">
+                            Нет созданных планов. 
+                            <a href="/admin/cash_app/salesplan/add/" class="btn btn-sm btn-success">
+                                <i class="bi bi-plus-lg"></i> Создать план
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // График
+    var ctx = document.getElementById('salesChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: '{{ labels|safe }}',
+            datasets: [{
+                label: 'Продажи за день (₽)',
+                data: '{{ daily_data|safe }}',
+                backgroundColor: 'rgba(13, 110, 253, 0.5)',
+                borderColor: 'rgba(13, 110, 253, 1)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return value + ' ₽';
+                        }
+                    }
+                }
+            },
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return context.raw + ' ₽';
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    // Установка ширины для всех прогресс-баров по data-width
+    document.querySelectorAll('[id^="progress-"]').forEach(function(el) {
+        var width = el.getAttribute('data-width');
+        if (width) {
+            el.style.width = width + '%';
+        }
+    });
+});
+</script>
+{% endblock %}

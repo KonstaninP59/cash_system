@@ -54,6 +54,7 @@
                         <th>Количество</th>
                         <th>Ед.</th>
                         <th>Сумма</th>
+                        <th>Причина</th>
                         <th>Пользователь</th>
                     </tr>
                 </thead>
@@ -80,11 +81,18 @@
                                 —
                             {% endif %}
                         </td>
+                        <td>
+                            {% if record.reason %}
+                                {{ record.reason }}
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
                         <td>{{ record.user.username|default:"-" }}</td>
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="7" class="text-center py-4">
+                        <td colspan="8" class="text-center py-4">
                             <i class="bi bi-clock-history fs-1 d-block text-muted"></i>
                             <p class="text-muted">История операций пуста</p>
                         </td>
