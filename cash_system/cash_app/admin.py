@@ -1,13 +1,17 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.models import User
-from .models import Product, History, SalesPlan
+from .models import Product, History, SalesPlan, Category, Coupon
 
-class ProductAdmin(admin.ModelAdmin):
-    list_display = ['name', 'quantity', 'price', 'expiration_date', 'get_status']
-    list_filter = ['expiration_date']
+class CategoryAdmin(admin.ModelAdmin):
+    list_display = ['name', 'description', 'created_at']
     search_fields = ['name']
 
+class ProductAdmin(admin.ModelAdmin):
+    list_display = ['name', 'category', 'quantity', 'price', 'unit', 'expiration_date', 'get_status']
+    list_filter = ['category', 'expiration_date', 'unit']
+    search_fields = ['name', 'barcode']
+    
     def get_status(self, obj):
         if obj.is_expired():
             return 'Просрочен'
@@ -16,8 +20,14 @@ class ProductAdmin(admin.ModelAdmin):
         return 'Нормальный'
     get_status.short_description = 'Статус'
 
+class CouponAdmin(admin.ModelAdmin):
+    list_display = ['code', 'discount_percent', 'is_active', 'valid_from', 'valid_until', 'used_count', 'max_uses']
+    list_filter = ['is_active', 'created_at']
+    search_fields = ['code']
+    readonly_fields = ['used_count', 'created_at', 'updated_at', 'created_by']
+
 class HistoryAdmin(admin.ModelAdmin):
-    list_display = ['type', 'product', 'quantity', 'total_price', 'date', 'user']
+    list_display = ['type', 'product', 'quantity', 'total_price', 'coupon', 'date', 'user']
     list_filter = ['type', 'date']
     search_fields = ['product__name', 'user__username']
 
@@ -44,13 +54,9 @@ class SalesPlanAdmin(admin.ModelAdmin):
     completion.short_description = 'Выполнение'
     
     def save_model(self, request, obj, form, change):
-        if change:  # Если объект редактируется
+        if change:
             obj.updated_by = request.user
         super().save_model(request, obj, form, change)
-
-admin.site.register(Product, ProductAdmin)
-admin.site.register(History, HistoryAdmin)
-admin.site.register(SalesPlan, SalesPlanAdmin)
 
 class CustomUserAdmin(UserAdmin):
     list_display = ['username', 'email', 'first_name', 'last_name', 'is_staff', 'date_joined']
@@ -63,5 +69,13 @@ class CustomUserAdmin(UserAdmin):
             return '—'
     get_plan.short_description = 'План на месяц'
 
+# Регистрация моделей
+admin.site.register(Category, CategoryAdmin)
+admin.site.register(Product, ProductAdmin)
+admin.site.register(Coupon, CouponAdmin)
+admin.site.register(History, HistoryAdmin)
+admin.site.register(SalesPlan, SalesPlanAdmin)
+
+# Перерегистрация User
 admin.site.unregister(User)
 admin.site.register(User, CustomUserAdmin)

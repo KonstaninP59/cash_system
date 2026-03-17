@@ -1,0 +1,47 @@
+{% extends 'cash_app/base.html' %}
+{% load static %}
+
+{% block title %} - Удаление категории{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card shadow border-danger">
+            <div class="card-header bg-danger text-white">
+                <h4 class="mb-0"><i class="bi bi-exclamation-triangle"></i> Подтверждение удаления</h4>
+            </div>
+            <div class="card-body">
+                <p class="fs-5">Вы уверены, что хотите удалить категорию <strong>"{{ category.name }}"</strong>?</p>
+                
+                {% if products_count > 0 %}
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                    <strong>Невозможно удалить!</strong><br>
+                    В этой категории есть товары ({{ products_count }} шт.).<br>
+                    Сначала переместите или удалите товары из этой категории.
+                </div>
+                {% else %}
+                <div class="alert alert-warning">
+                    <i class="bi bi-info-circle"></i>
+                    Это действие невозможно отменить. Категория будет удалена навсегда.
+                </div>
+                {% endif %}
+                
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="d-flex justify-content-between">
+                        <a href="{% url 'category_list' %}" class="btn btn-secondary">
+                            <i class="bi bi-x-lg"></i> Отмена
+                        </a>
+                        {% if products_count == 0 %}
+                        <button type="submit" class="btn btn-danger">
+                            <i class="bi bi-trash"></i> Удалить
+                        </button>
+                        {% endif %}
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

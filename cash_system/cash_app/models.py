@@ -1,7 +1,21 @@
 from django.db import models
 from django.contrib.auth.models import User
-from datetime import date, datetime
+from datetime import date
 from django.utils import timezone
+
+class Category(models.Model):
+    """Модель категории товаров"""
+    name = models.CharField('Название категории', max_length=100)
+    description = models.TextField('Описание', blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Категория'
+        verbose_name_plural = 'Категории'
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
 
 class Product(models.Model):
     """Модель товара"""
@@ -12,6 +26,14 @@ class Product(models.Model):
     
     name = models.CharField('Название', max_length=200)
     barcode = models.CharField('Штрих-код', max_length=50, blank=True, null=True, unique=True)
+    category = models.ForeignKey(
+        Category,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name='Категория',
+        related_name='products'
+    )
     quantity = models.PositiveIntegerField('Количество', default=0)
     price = models.DecimalField('Цена', max_digits=10, decimal_places=2)
     unit = models.CharField('Единица измерения', max_length=3, choices=UNIT_CHOICES, default='pcs')
@@ -43,6 +65,44 @@ class Product(models.Model):
             return 'expiring_soon'
         return 'good'
 
+class Coupon(models.Model):
+    """Модель купона на скидку"""
+    code = models.CharField('Код купона', max_length=50, unique=True)
+    discount_percent = models.PositiveIntegerField('Скидка %', help_text='Процент скидки от 0 до 100')
+    is_active = models.BooleanField('Активен', default=True)
+    valid_from = models.DateTimeField('Действует с', null=True, blank=True)
+    valid_until = models.DateTimeField('Действует до', null=True, blank=True)
+    max_uses = models.PositiveIntegerField('Максимальное количество использований', null=True, blank=True)
+    used_count = models.PositiveIntegerField('Использовано раз', default=0)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, verbose_name='Кем создан')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Купон'
+        verbose_name_plural = 'Купоны'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.code} ({self.discount_percent}%)"
+
+    def is_valid(self):
+        if not self.is_active:
+            return False
+        now = timezone.now()
+        if self.valid_from and now < self.valid_from:
+            return False
+        if self.valid_until and now > self.valid_until:
+            return False
+        if self.max_uses and self.used_count >= self.max_uses:
+            return False
+        return True
+
+    def apply_discount(self, total):
+        if self.is_valid():
+            return total * (100 - self.discount_percent) / 100
+        return total
+
 class History(models.Model):
     """Модель истории движений товаров"""
     TYPE_CHOICES = [
@@ -56,6 +116,13 @@ class History(models.Model):
     quantity = models.PositiveIntegerField('Количество')
     total_price = models.DecimalField('Сумма', max_digits=10, decimal_places=2, null=True, blank=True)
     reason = models.CharField('Причина', max_length=200, blank=True, null=True)
+    coupon = models.ForeignKey(
+        Coupon,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name='Применённый купон'
+    )
     date = models.DateTimeField('Дата операции', auto_now_add=True)
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Пользователь')
 
@@ -95,11 +162,12 @@ class SalesPlan(models.Model):
         return total
 
     def get_completion_percentage(self):
-        """Процент выполнения плана"""
+        """Процент выполнения плана (может быть больше 100%)"""
         if self.monthly_target == 0:
             return 0
         current = self.get_current_month_sales()
-        return min(100, round((current / float(self.monthly_target)) * 100, 1))
+        # Убираем min(100, ...) чтобы показывать процент даже больше 100
+        return round((current / float(self.monthly_target)) * 100, 1)
 
     def get_remaining_amount(self):
         """Осталось выполнить до плана"""

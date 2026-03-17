@@ -54,6 +54,7 @@
                         <th>Количество</th>
                         <th>Ед.</th>
                         <th>Сумма</th>
+                        <th>Купон</th>
                         <th>Причина</th>
                         <th>Пользователь</th>
                     </tr>
@@ -76,7 +77,14 @@
                         <td>{{ record.product.get_unit_display }}</td>
                         <td>
                             {% if record.total_price %}
-                                {{ record.total_price }} ₽
+                                {{ record.total_price|floatformat:2 }} ₽
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if record.coupon %}
+                                <span class="badge bg-secondary">{{ record.coupon.code }}</span>
                             {% else %}
                                 —
                             {% endif %}
@@ -92,7 +100,7 @@
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="8" class="text-center py-4">
+                        <td colspan="9" class="text-center py-4">
                             <i class="bi bi-clock-history fs-1 d-block text-muted"></i>
                             <p class="text-muted">История операций пуста</p>
                         </td>

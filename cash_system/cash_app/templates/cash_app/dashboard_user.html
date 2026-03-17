@@ -49,18 +49,25 @@
     </div>
     <div class="card-body">
         <div class="progress mb-3" style="height: 30px;">
-            <div class="progress-bar {% if completion_percentage >= 100 %}bg-success{% elif completion_percentage >= 75 %}bg-info{% elif completion_percentage >= 50 %}bg-warning{% else %}bg-danger{% endif %}" 
-                role="progressbar" 
-                style="--width: {{ completion_percentage }}%; width: var(--width);" 
+            <div class="progress-bar 
+                {% if completion_percentage >= 100 %}bg-success
+                {% elif completion_percentage >= 75 %}bg-info
+                {% elif completion_percentage >= 50 %}bg-warning
+                {% else %}bg-danger{% endif %}" 
+                role="progressbar"
+                data-width="{{ completion_percentage }}"
                 aria-valuenow="{{ completion_percentage }}" 
                 aria-valuemin="0" 
                 aria-valuemax="100">
                 {{ completion_percentage }}%
             </div>
-        </div>  
+        </div>
         <p class="text-muted">
             <i class="bi bi-info-circle"></i>
             Выполнено {{ completion_percentage }}% от месячного плана
+            {% if completion_percentage > 100 %}
+                <span class="badge bg-success ms-2">План перевыполнен!</span>
+            {% endif %}
         </p>
     </div>
 </div>
@@ -101,48 +108,58 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    var canvas = document.getElementById('salesChart');
-    if (canvas) {
-        var ctx = canvas.getContext('2d');
-        new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: '{{ labels|safe }}',
-                datasets: [{
-                    label: 'Продажи за день (₽)',
-                    data: '{{ daily_data|safe }}',
-                    backgroundColor: 'rgba(13, 110, 253, 0.2)',
-                    borderColor: 'rgba(13, 110, 253, 1)',
-                    borderWidth: 2,
-                    tension: 0.1,
-                    fill: true
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        ticks: {
-                            callback: function(value) {
-                                return value + ' ₽';
-                            }
+    // Установка ширины прогресс-бара
+    var progressBar = document.querySelector('.progress-bar');
+    if (progressBar) {
+        var width = progressBar.getAttribute('data-width');
+        if (width) {
+            // Ограничиваем ширину до 100% для визуального отображения,
+            // но процент выполнения показываем реальный
+            var displayWidth = Math.min(parseFloat(width), 100);
+            progressBar.style.width = displayWidth + '%';
+        }
+    }
+
+    // График
+    var ctx = document.getElementById('salesChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: '{{ labels|safe }}',
+            datasets: [{
+                label: 'Продажи за день (₽)',
+                data: '{{ daily_data|safe }}',
+                backgroundColor: 'rgba(13, 110, 253, 0.2)',
+                borderColor: 'rgba(13, 110, 253, 1)',
+                borderWidth: 2,
+                tension: 0.1,
+                fill: true
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return value + ' ₽';
                         }
                     }
-                },
-                plugins: {
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                return context.raw + ' ₽';
-                            }
+                }
+            },
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return context.raw + ' ₽';
                         }
                     }
                 }
             }
-        });
-    }
+        }
+    });
 });
 </script>
 {% endblock %}

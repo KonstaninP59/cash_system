@@ -1,7 +1,6 @@
 from django import forms
 from django.contrib.auth.forms import AuthenticationForm
-from django.contrib.auth.models import User
-from .models import Product, SalesPlan
+from .models import Product, SalesPlan, Coupon
 
 class LoginForm(AuthenticationForm):
     """Форма входа"""
@@ -18,10 +17,11 @@ class ProductForm(forms.ModelForm):
     """Форма для товара"""
     class Meta:
         model = Product
-        fields = ['name', 'barcode', 'quantity', 'price', 'unit', 'expiration_date']
+        fields = ['name', 'barcode', 'category', 'quantity', 'price', 'unit', 'expiration_date']
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Название товара'}),
             'barcode': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Штрих-код (необязательно)'}),
+            'category': forms.Select(attrs={'class': 'form-control'}),
             'quantity': forms.NumberInput(attrs={'class': 'form-control', 'min': 0}),
             'price': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': 0}),
             'unit': forms.Select(attrs={'class': 'form-control'}),
@@ -30,6 +30,7 @@ class ProductForm(forms.ModelForm):
         labels = {
             'name': 'Название',
             'barcode': 'Штрих-код',
+            'category': 'Категория',
             'quantity': 'Количество',
             'price': 'Цена',
             'unit': 'Единица измерения',
@@ -91,5 +92,27 @@ class SalesPlanForm(forms.ModelForm):
         }
         labels = {
             'monthly_target': 'Месячный план (₽)',
+        }
+
+class CouponForm(forms.ModelForm):
+    """Форма для купона"""
+    class Meta:
+        model = Coupon
+        fields = ['code', 'discount_percent', 'is_active', 'valid_from', 'valid_until', 'max_uses']
+        widgets = {
+            'code': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Например: SUMMER2024'}),
+            'discount_percent': forms.NumberInput(attrs={'class': 'form-control', 'min': 0, 'max': 100}),
+            'is_active': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'valid_from': forms.DateTimeInput(attrs={'class': 'form-control', 'type': 'datetime-local'}),
+            'valid_until': forms.DateTimeInput(attrs={'class': 'form-control', 'type': 'datetime-local'}),
+            'max_uses': forms.NumberInput(attrs={'class': 'form-control', 'min': 0, 'placeholder': 'Оставьте пустым для безлимита'}),
+        }
+        labels = {
+            'code': 'Код купона',
+            'discount_percent': 'Процент скидки',
+            'is_active': 'Активен',
+            'valid_from': 'Действует с',
+            'valid_until': 'Действует до',
+            'max_uses': 'Максимальное использований',
         }
         

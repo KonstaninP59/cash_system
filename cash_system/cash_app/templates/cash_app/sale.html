@@ -5,55 +5,100 @@
 
 {% block content %}
 <div class="row">
-    <!-- Левая колонка - товары -->
+    <!-- Левая колонка - товары по категориям -->
     <div class="col-md-8">
         <div class="card shadow mb-4">
-            <div class="card-header bg-primary text-white">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><i class="bi bi-box"></i> Доступные товары</h5>
+                {% if user.is_superuser or user.is_staff %}
+                <a href="{% url 'category_list' %}" class="btn btn-sm btn-light">
+                    <i class="bi bi-gear"></i> Управление категориями
+                </a>
+                {% endif %}
             </div>
             <div class="card-body">
-                <div class="row">
-                    {% for product in products %}
-                    <div class="col-md-4 mb-3">
-                        <div class="card h-100 {% if product.is_expiring_soon %}border-warning{% endif %}">
-                            <div class="card-body">
-                                <h6 class="card-title">{{ product.name }}</h6>
-                                <p class="card-text">
-                                    <span class="badge bg-secondary">В наличии: {{ product.quantity }} {{ product.get_unit_display }}</span><br>
-                                    <strong>Цена: {{ product.price }} ₽/{{ product.get_unit_display }}</strong><br>
-                                    <small class="text-muted">Годен до: {{ product.expiration_date|date:"d.m.Y" }}</small>
-                                    {% if product.barcode %}
-                                        <br><small class="text-muted">ШК: {{ product.barcode }}</small>
+                {% if not categories %}
+                <div class="text-center py-4">
+                    <i class="bi bi-box fs-1 d-block text-muted"></i>
+                    <p class="text-muted">Нет доступных товаров для продажи</p>
+                </div>
+                {% endif %}
+                
+                {% for category, products in categories.items %}
+                <div class="category-container mb-3">
+                    <!-- Заголовок категории -->
+                    <div class="category-header d-flex justify-content-between align-items-center p-2 bg-light rounded 
+                              {% if category.id|stringformat:'i' in collapsed_categories %}collapsed{% endif %}"
+                         data-category-id="{{ category.id|default:'0' }}"
+                         style="cursor: pointer;">
+                        <div>
+                            <i class="bi {% if category.id|stringformat:'i' in collapsed_categories %}bi-chevron-right{% else %}bi-chevron-down{% endif %} me-2"></i>
+                            {% if category %}
+                                <i class="bi bi-folder"></i> <strong>{{ category.name }}</strong>
+                                <small class="text-muted ms-2">({{ products|length }} товаров)</small>
+                            {% else %}
+                                <i class="bi bi-archive"></i> <strong>Без категории</strong>
+                                <small class="text-muted ms-2">({{ products|length }} товаров)</small>
+                            {% endif %}
+                        </div>
+                        
+                        {% if user.is_superuser or user.is_staff %}
+                        <div class="category-actions">
+                            {% if category %}
+                            <a href="{% url 'category_edit' category.id %}" class="btn btn-sm btn-outline-primary" 
+                               onclick="event.stopPropagation();" title="Редактировать категорию">
+                                <i class="bi bi-pencil"></i>
+                            </a>
+                            <a href="{% url 'category_delete' category.id %}" class="btn btn-sm btn-outline-danger" 
+                               onclick="event.stopPropagation();" title="Удалить категорию">
+                                <i class="bi bi-trash"></i>
+                            </a>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+                    </div>
+                    
+                    <!-- Товары категории -->
+                    <div class="category-content row mt-2 {% if category.id|stringformat:'i' in collapsed_categories %}show{% endif %}"
+                         id="category-content-{{ category.id|default:'0' }}">
+                        {% for product in products %}
+                        <div class="col-md-4 mb-3">
+                            <div class="card h-100 {% if product.is_expiring_soon %}border-warning{% endif %}">
+                                <div class="card-body">
+                                    <h6 class="card-title">{{ product.name }}</h6>
+                                    <p class="card-text">
+                                        <span class="badge bg-secondary">В наличии: {{ product.quantity }} {{ product.get_unit_display }}</span><br>
+                                        <strong>Цена: {{ product.price|floatformat:2 }} ₽/{{ product.get_unit_display }}</strong><br>
+                                        <small class="text-muted">Годен до: {{ product.expiration_date|date:"d.m.Y" }}</small>
+                                        {% if product.barcode %}
+                                            <br><small class="text-muted">ШК: {{ product.barcode }}</small>
+                                        {% endif %}
+                                    </p>
+                                    
+                                    {% if product.is_expiring_soon %}
+                                        <div class="alert alert-warning py-1 px-2 small mb-2">
+                                            <i class="bi bi-exclamation-triangle"></i> Скоро истекает
+                                        </div>
                                     {% endif %}
-                                </p>
-                                
-                                {% if product.is_expiring_soon %}
-                                    <div class="alert alert-warning py-1 px-2 small mb-2">
-                                        <i class="bi bi-exclamation-triangle"></i> Скоро истекает
-                                    </div>
-                                {% endif %}
-                                
-                                <form method="post" action="{% url 'add_to_cart' %}" class="mt-2">
-                                    {% csrf_token %}
-                                    <input type="hidden" name="product_id" value="{{ product.id }}">
-                                    <div class="input-group">
-                                        <input type="number" name="quantity" class="form-control form-control-sm" 
-                                               value="1" min="1" max="{{ product.quantity }}">
-                                        <button type="submit" class="btn btn-sm btn-success">
-                                            <i class="bi bi-cart-plus"></i>
-                                        </button>
-                                    </div>
-                                </form>
+                                    
+                                    <form method="post" action="{% url 'add_to_cart' %}" class="mt-2">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="product_id" value="{{ product.id }}">
+                                        <div class="input-group">
+                                            <input type="number" name="quantity" class="form-control form-control-sm" 
+                                                   value="1" min="1" max="{{ product.quantity }}">
+                                            <button type="submit" class="btn btn-sm btn-success">
+                                                <i class="bi bi-cart-plus"></i>
+                                            </button>
+                                        </div>
+                                    </form>
+                                </div>
                             </div>
                         </div>
+                        {% endfor %}
                     </div>
-                    {% empty %}
-                    <div class="col-12 text-center py-4">
-                        <i class="bi bi-box fs-1 d-block text-muted"></i>
-                        <p class="text-muted">Нет доступных товаров для продажи</p>
-                    </div>
-                    {% endfor %}
                 </div>
+                {% endfor %}
             </div>
         </div>
     </div>
@@ -65,6 +110,33 @@
                 <h5 class="mb-0"><i class="bi bi-cart"></i> Корзина</h5>
             </div>
             <div class="card-body">
+                <!-- Блок купонов -->
+                {% if available_coupons %}
+                <div class="mb-3">
+                    <label class="form-label"><i class="bi bi-ticket-perforated"></i> Купон на скидку:</label>
+                    <form method="post" action="{% url 'apply_coupon' %}" class="d-flex gap-2">
+                        {% csrf_token %}
+                        <select name="coupon_id" class="form-select form-select-sm">
+                            <option value="">-- Выберите купон --</option>
+                            {% for coupon in available_coupons %}
+                                <option value="{{ coupon.id }}" {% if applied_coupon and applied_coupon.id == coupon.id %}selected{% endif %}>
+                                    {{ coupon.code }} ({{ coupon.discount_percent }}% скидка)
+                                </option>
+                            {% endfor %}
+                        </select>
+                        <button type="submit" class="btn btn-sm btn-outline-primary">Применить</button>
+                    </form>
+                    {% if applied_coupon %}
+                        <div class="mt-2">
+                            <span class="badge bg-success">Применен купон {{ applied_coupon.code }} (скидка {{ applied_coupon.discount_percent }}%)</span>
+                            <a href="{% url 'remove_coupon' %}" class="btn btn-sm btn-outline-danger ms-2">Убрать</a>
+                        </div>
+                    {% endif %}
+                </div>
+                <hr>
+                {% endif %}
+                
+                <!-- Товары в корзине -->
                 {% if cart_items %}
                     <div class="list-group mb-3">
                         {% for item in cart_items %}
@@ -72,10 +144,10 @@
                             <div class="d-flex justify-content-between align-items-center">
                                 <div>
                                     <h6 class="mb-1">{{ item.product.name }}</h6>
-                                    <small>{{ item.quantity }} {{ item.product.get_unit_display }} × {{ item.product.price }} ₽</small>
+                                    <small>{{ item.quantity }} {{ item.product.get_unit_display }} × {{ item.product.price|floatformat:2 }} ₽</small>
                                 </div>
                                 <div>
-                                    <strong>{{ item.subtotal }} ₽</strong>
+                                    <strong>{{ item.subtotal|floatformat:2 }} ₽</strong>
                                     <a href="{% url 'remove_from_cart' item.product.id %}" 
                                        class="btn btn-sm btn-danger ms-2" title="Удалить">
                                         <i class="bi bi-x"></i>
@@ -86,9 +158,21 @@
                         {% endfor %}
                     </div>
                     
+                    <!-- Итоги со скидкой -->
+                    {% if discount_amount > 0 %}
+                        <div class="d-flex justify-content-between">
+                            <span>Сумма без скидки:</span>
+                            <span>{{ total|floatformat:2 }} ₽</span>
+                        </div>
+                        <div class="d-flex justify-content-between text-danger">
+                            <span>Скидка:</span>
+                            <span>- {{ discount_amount|floatformat:2 }} ₽</span>
+                        </div>
+                        <hr>
+                    {% endif %}
                     <div class="d-flex justify-content-between mb-3">
                         <h5>Итого:</h5>
-                        <h5 class="text-success">{{ total }} ₽</h5>
+                        <h5 class="text-success">{{ total_with_discount|floatformat:2 }} ₽</h5>
                     </div>
                     
                     <form method="post" action="{% url 'sale' %}">
@@ -113,4 +197,79 @@
         </div>
     </div>
 </div>
+
+<style>
+.category-content {
+    display: none;
+}
+.category-content.show {
+    display: flex;
+}
+.category-header.collapsed .bi-chevron-down {
+    display: none;
+}
+.category-header:not(.collapsed) .bi-chevron-right {
+    display: none;
+}
+.category-header:hover {
+    background-color: #e9ecef !important;
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Функция для сохранения состояния категорий
+    function saveCollapsedState() {
+        var collapsed = [];
+        document.querySelectorAll('.category-header.collapsed').forEach(function(header) {
+            var categoryId = header.getAttribute('data-category-id');
+            if (categoryId) {
+                collapsed.push(categoryId);
+            }
+        });
+        
+        // Отправляем на сервер через AJAX
+        fetch('{% url "save_collapsed" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}'
+            },
+            body: JSON.stringify({ collapsed: collapsed })
+        });
+    }
+    
+    // Обработчик клика по заголовку категории
+    document.querySelectorAll('.category-header').forEach(function(header) {
+        header.addEventListener('click', function(e) {
+            // Не сворачиваем, если клик по кнопке управления
+            if (e.target.closest('.category-actions')) {
+                return;
+            }
+            
+            var categoryId = this.getAttribute('data-category-id');
+            var content = document.getElementById('category-content-' + categoryId);
+            var icon = this.querySelector('i.bi');
+            
+            if (content) {
+                this.classList.toggle('collapsed');
+                content.classList.toggle('show');
+                
+                // Меняем иконку
+                if (icon) {
+                    if (this.classList.contains('collapsed')) {
+                        icon.classList.remove('bi-chevron-down');
+                        icon.classList.add('bi-chevron-right');
+                    } else {
+                        icon.classList.remove('bi-chevron-right');
+                        icon.classList.add('bi-chevron-down');
+                    }
+                }
+                
+                saveCollapsedState();
+            }
+        });
+    });
+});
+</script>
 {% endblock %}

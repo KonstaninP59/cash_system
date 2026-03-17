@@ -1,15 +1,15 @@
-from django.contrib.auth.models import User
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required, user_passes_test
+from django.contrib.auth.models import User
 from django.contrib import messages
 from django.db import transaction
-from django.db.models import Q, Sum, Count
+from django.db.models import Q, Sum, Count, F
 from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
 from datetime import date, timedelta, datetime
-from .models import Product, History, SalesPlan
-from .forms import LoginForm, ProductForm, SaleForm, BarcodeForm, DisposalForm, SalesPlanForm
+from .models import Product, History, SalesPlan, Category, Coupon
+from .forms import LoginForm, ProductForm, SaleForm, BarcodeForm, DisposalForm, SalesPlanForm, CouponForm
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
@@ -18,7 +18,6 @@ from reportlab.lib.units import mm
 from io import BytesIO
 import json
 import calendar
-
 
 def is_admin(user):
     """Проверка, является ли пользователь администратором"""
@@ -228,7 +227,7 @@ def product_disposal(request, pk):
 @login_required
 def history_list(request):
     """История движений товаров"""
-    history = History.objects.all().select_related('product', 'user')
+    history = History.objects.all().select_related('product', 'user', 'coupon')
     
     # Фильтрация по типу
     type_filter = request.GET.get('type')
@@ -259,10 +258,28 @@ def sale_view(request):
             messages.warning(request, 'Корзина пуста!')
             return redirect('sale')
         
+        # Получаем примененный купон
+        applied_coupon_id = request.session.get('applied_coupon')
+        coupon = None
+        discount_factor = 1.0
+        
+        if applied_coupon_id:
+            try:
+                coupon = Coupon.objects.get(pk=applied_coupon_id)
+                if coupon.is_valid():
+                    discount_factor = (100 - coupon.discount_percent) / 100
+                else:
+                    coupon = None
+                    del request.session['applied_coupon']
+                    request.session.modified = True
+            except Coupon.DoesNotExist:
+                del request.session['applied_coupon']
+                request.session.modified = True
+        
         try:
             with transaction.atomic():
                 sale_items = []
-                total_amount = 0
+                total_without_discount = 0
                 
                 for product_id, item in cart.items():
                     product = Product.objects.select_for_update().get(pk=product_id)
@@ -276,44 +293,65 @@ def sale_view(request):
                     product.save()
                     
                     # Считаем сумму
-                    item_total = product.price * quantity
-                    total_amount += item_total
+                    item_price = float(product.price)
+                    item_total_without_discount = item_price * quantity
+                    total_without_discount += item_total_without_discount
                     
-                    # Создаем запись в истории с суммой
-                    history = History.objects.create(
-                        type='sale',
-                        product=product,
-                        quantity=quantity,
-                        total_price=item_total,
-                        user=request.user
-                    )
+                    # Применяем скидку и округляем до 2 знаков
+                    item_total_with_discount = round(item_total_without_discount * discount_factor, 2)
                     
                     sale_items.append({
                         'product': product,
                         'quantity': quantity,
-                        'price': product.price,
-                        'total': item_total,
+                        'price': round(item_price, 2),
+                        'total': item_total_with_discount,
                         'unit': product.get_unit_display()
                     })
                 
-                # Сохраняем данные чека в сессию для PDF
+                # Округляем итоговые суммы до 2 знаков
+                total_without_discount = round(total_without_discount, 2)
+                total_with_discount = round(total_without_discount * discount_factor, 2) if discount_factor != 1.0 else total_without_discount
+                discount_amount = round(total_without_discount - total_with_discount, 2) if coupon else 0
+                
+                # Создаем записи в истории
+                for item in sale_items:
+                    History.objects.create(
+                        type='sale',
+                        product=item['product'],
+                        quantity=item['quantity'],
+                        total_price=item['total'],  # Уже округлено
+                        user=request.user,
+                        coupon=coupon
+                    )
+                
+                # Увеличиваем счетчик использований купона
+                if coupon:
+                    coupon.used_count += 1
+                    coupon.save()
+                
+                # Сохраняем данные чека в сессию для PDF (все суммы округлены)
                 request.session['last_receipt'] = {
                     'items': [
                         {
                             'name': item['product'].name,
                             'quantity': item['quantity'],
-                            'price': float(item['price']),
-                            'total': float(item['total']),
+                            'price': item['price'],
+                            'total': item['total'],
                             'unit': item['unit']
                         } for item in sale_items
                     ],
-                    'total': float(total_amount),
+                    'subtotal': total_without_discount,
+                    'discount': discount_amount,
+                    'total': total_with_discount,
+                    'coupon_code': coupon.code if coupon else None,
                     'date': timezone.now().strftime('%d.%m.%Y %H:%M'),
                     'cashier': request.user.username
                 }
                 
-                # Очищаем корзину
+                # Очищаем корзину и купон
                 request.session['cart'] = {}
+                if 'applied_coupon' in request.session:
+                    del request.session['applied_coupon']
                 request.session.modified = True
                 
                 messages.success(request, 'Продажа успешно оформлена!')
@@ -327,17 +365,35 @@ def sale_view(request):
         return redirect('sale')
     
     # GET запрос - отображаем страницу продажи
-    products = Product.objects.filter(quantity__gt=0).exclude(expiration_date__lt=date.today())
-    cart = request.session.get('cart', {})
+    # Группируем товары по категориям
+    available_products = Product.objects.filter(
+        quantity__gt=0,
+        expiration_date__gte=date.today()
+    ).select_related('category').order_by('category__name', 'name')
+    
+    # Получаем все категории (даже пустые) для отображения в управлении
+    all_categories = Category.objects.all().order_by('name')
+    
+    # Группируем товары по категориям
+    categories_with_products = {}
+    for product in available_products:
+        cat = product.category
+        if cat not in categories_with_products:
+            categories_with_products[cat] = []
+        categories_with_products[cat].append(product)
+    
+    # Получаем состояние свёрнутых категорий из сессии
+    collapsed_categories = request.session.get('collapsed_categories', [])
     
     # Получаем товары в корзине
+    cart = request.session.get('cart', {})
     cart_items = []
     total = 0
     
     for product_id, item in cart.items():
         try:
             product = Product.objects.get(pk=product_id)
-            subtotal = product.price * item['quantity']
+            subtotal = float(product.price) * item['quantity']
             total += subtotal
             cart_items.append({
                 'product': product,
@@ -347,12 +403,51 @@ def sale_view(request):
         except Product.DoesNotExist:
             continue
     
+    total = round(total, 2)
+    
+    # Получаем доступные купоны
+    now = timezone.now()
+    available_coupons = Coupon.objects.filter(is_active=True).filter(
+        Q(valid_from__isnull=True) | Q(valid_from__lte=now)
+    ).filter(
+        Q(valid_until__isnull=True) | Q(valid_until__gte=now)
+    ).filter(
+        Q(max_uses__isnull=True) | Q(used_count__lt=F('max_uses'))
+    )
+    
+    # Проверяем примененный купон
+    applied_coupon_id = request.session.get('applied_coupon')
+    applied_coupon = None
+    discount_amount = 0
+    total_with_discount = total
+    
+    if applied_coupon_id:
+        try:
+            applied_coupon = Coupon.objects.get(pk=applied_coupon_id)
+            if applied_coupon.is_valid():
+                total_with_discount = applied_coupon.apply_discount(total)
+                total_with_discount = round(total_with_discount, 2)
+                discount_amount = round(total - total_with_discount, 2)
+            else:
+                del request.session['applied_coupon']
+                request.session.modified = True
+        except Coupon.DoesNotExist:
+            del request.session['applied_coupon']
+            request.session.modified = True
+    
     context = {
-        'products': products,
+        'categories': categories_with_products,
+        'all_categories': all_categories,
+        'collapsed_categories': [str(cat_id) for cat_id in collapsed_categories],
         'cart_items': cart_items,
         'total': total,
+        'total_with_discount': total_with_discount,
+        'discount_amount': discount_amount,
+        'available_coupons': available_coupons,
+        'applied_coupon': applied_coupon,
     }
     return render(request, 'cash_app/sale.html', context)
+
 
 @login_required
 def add_to_cart(request):
@@ -405,6 +500,8 @@ def remove_from_cart(request, product_id):
 def clear_cart(request):
     """Очистка корзины"""
     request.session['cart'] = {}
+    if 'applied_coupon' in request.session:
+        del request.session['applied_coupon']
     request.session.modified = True
     messages.success(request, 'Корзина очищена')
     return redirect('sale')
@@ -507,6 +604,8 @@ def receipt_pdf(request):
     
     story.append(Paragraph(f"Дата: {receipt['date']}", info_style))
     story.append(Paragraph(f"Кассир: {receipt['cashier']}", info_style))
+    if receipt.get('coupon_code'):
+        story.append(Paragraph(f"Купон: {receipt['coupon_code']}", info_style))
     story.append(Spacer(1, 20))
     
     # Таблица с товарами
@@ -520,6 +619,11 @@ def receipt_pdf(request):
             f"{item['total']:.2f} ₽"
         ])
     
+    # Строка с подытогом и скидкой
+    data.append(['', '', '', 'ПОДЫТОГ:', f"{receipt['subtotal']:.2f} ₽"])
+    if receipt.get('discount', 0) > 0:
+        data.append(['', '', '', 'СКИДКА:', f"-{receipt['discount']:.2f} ₽"])
+    
     # Итоговая строка
     data.append(['', '', '', 'ИТОГО:', f"{receipt['total']:.2f} ₽"])
     
@@ -531,8 +635,8 @@ def receipt_pdf(request):
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
         ('FONTSIZE', (0, 0), (-1, 0), 12),
         ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-        ('BACKGROUND', (0, 1), (-1, -2), colors.beige),
-        ('GRID', (0, 0), (-1, -2), 1, colors.black),
+        ('BACKGROUND', (0, 1), (-1, -4), colors.beige),
+        ('GRID', (0, 0), (-1, -4), 1, colors.black),
         ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
         ('BACKGROUND', (0, -1), (-1, -1), colors.lightgrey),
         ('ALIGN', (3, 1), (4, -1), 'RIGHT'),
@@ -648,34 +752,8 @@ def dashboard_view(request):
             date__gte=start_of_month
         ).count()
         
-        # Топ-3 продавца
-        top_sellers = []
-        for user in User.objects.filter(is_staff=False, is_active=True):
-            user_sales = History.objects.filter(
-                type='sale',
-                user=user,
-                date__gte=start_of_month
-            ).aggregate(total=Sum('total_price'))['total'] or 0
-            
-            try:
-                plan = SalesPlan.objects.get(user=user)
-                plan_amount = plan.monthly_target
-                completion = plan.get_completion_percentage()
-            except SalesPlan.DoesNotExist:
-                plan_amount = 0
-                completion = 0
-            
-            top_sellers.append({
-                'user': user,
-                'sales': user_sales,
-                'plan': plan_amount,
-                'completion': completion
-            })
-        
-        top_sellers = sorted(top_sellers, key=lambda x: x['sales'], reverse=True)[:3]
-        
         # Статистика по планам
-        users_with_plans = SalesPlan.objects.all().select_related('user')
+        users_with_plans = SalesPlan.objects.all().select_related('user', 'updated_by')
         
         # Продажи по дням для графика
         days_in_month = calendar.monthrange(now.year, now.month)[1]
@@ -701,7 +779,6 @@ def dashboard_view(request):
             'total_yearly_sales': total_yearly_sales,
             'sales_count': sales_count,
             'average_check': total_monthly_sales / sales_count if sales_count > 0 else 0,
-            'top_sellers': top_sellers,
             'users_with_plans': users_with_plans,
             'daily_data': json.dumps(daily_data),
             'labels': json.dumps(labels),
@@ -751,7 +828,7 @@ def user_sales_detail(request, user_id):
         type='sale',
         user=target_user,
         date__gte=start_of_month
-    ).select_related('product').order_by('-date')
+    ).select_related('product', 'coupon').order_by('-date')
     
     total = sum(float(s.total_price or 0) for s in sales)
     
@@ -767,3 +844,172 @@ def user_sales_detail(request, user_id):
         'plan': plan,
     }
     return render(request, 'cash_app/user_sales_detail.html', context)
+
+# Функции для управления купонами (только для администратора)
+@login_required
+@user_passes_test(is_admin)
+def coupon_list(request):
+    """Список купонов"""
+    coupons = Coupon.objects.all().order_by('-created_at')
+    return render(request, 'cash_app/coupon_list.html', {'coupons': coupons})
+
+@login_required
+@user_passes_test(is_admin)
+def coupon_create(request):
+    """Создание купона"""
+    if request.method == 'POST':
+        form = CouponForm(request.POST)
+        if form.is_valid():
+            coupon = form.save(commit=False)
+            coupon.created_by = request.user
+            coupon.save()
+            messages.success(request, 'Купон успешно создан')
+            return redirect('coupon_list')
+    else:
+        form = CouponForm()
+    return render(request, 'cash_app/coupon_form.html', {'form': form, 'title': 'Создание купона'})
+
+@login_required
+@user_passes_test(is_admin)
+def coupon_edit(request, pk):
+    """Редактирование купона"""
+    coupon = get_object_or_404(Coupon, pk=pk)
+    if request.method == 'POST':
+        form = CouponForm(request.POST, instance=coupon)
+        if form.is_valid():
+            form.save()
+            messages.success(request, 'Купон обновлен')
+            return redirect('coupon_list')
+    else:
+        form = CouponForm(instance=coupon)
+    return render(request, 'cash_app/coupon_form.html', {'form': form, 'title': 'Редактирование купона'})
+
+@login_required
+@user_passes_test(is_admin)
+def coupon_delete(request, pk):
+    """Удаление купона"""
+    coupon = get_object_or_404(Coupon, pk=pk)
+    if request.method == 'POST':
+        coupon.delete()
+        messages.success(request, 'Купон удален')
+        return redirect('coupon_list')
+    return render(request, 'cash_app/coupon_confirm_delete.html', {'coupon': coupon})
+
+@login_required
+def apply_coupon(request):
+    """Применение купона к корзине"""
+    if request.method == 'POST':
+        coupon_id = request.POST.get('coupon_id')
+        if coupon_id:
+            try:
+                coupon = Coupon.objects.get(pk=coupon_id)
+                if coupon.is_valid():
+                    request.session['applied_coupon'] = coupon_id
+                    messages.success(request, f'Купон {coupon.code} применён. Скидка {coupon.discount_percent}%')
+                else:
+                    messages.error(request, 'Купон недействителен')
+            except Coupon.DoesNotExist:
+                messages.error(request, 'Купон не найден')
+        else:
+            messages.error(request, 'Выберите купон')
+    return redirect('sale')
+
+@login_required
+def remove_coupon(request):
+    """Удаление купона из корзины"""
+    if 'applied_coupon' in request.session:
+        del request.session['applied_coupon']
+        request.session.modified = True
+        messages.success(request, 'Купон убран')
+    return redirect('sale')
+
+
+@login_required
+@user_passes_test(is_admin)
+def category_list(request):
+    """Список категорий"""
+    categories = Category.objects.all().order_by('name')
+    return render(request, 'cash_app/category_list.html', {'categories': categories})
+
+@login_required
+@user_passes_test(is_admin)
+def category_create(request):
+    """Создание категории"""
+    if request.method == 'POST':
+        name = request.POST.get('name')
+        description = request.POST.get('description', '')
+        
+        if name:
+            Category.objects.create(name=name, description=description)
+            messages.success(request, f'Категория "{name}" успешно создана')
+        else:
+            messages.error(request, 'Название категории обязательно')
+        
+        return redirect('category_list')
+    
+    return render(request, 'cash_app/category_form.html', {'title': 'Создание категории'})
+
+@login_required
+@user_passes_test(is_admin)
+def category_edit(request, pk):
+    """Редактирование категории"""
+    category = get_object_or_404(Category, pk=pk)
+    
+    if request.method == 'POST':
+        name = request.POST.get('name')
+        description = request.POST.get('description', '')
+        
+        if name:
+            category.name = name
+            category.description = description
+            category.save()
+            messages.success(request, f'Категория "{name}" успешно обновлена')
+        else:
+            messages.error(request, 'Название категории обязательно')
+        
+        return redirect('category_list')
+    
+    context = {
+        'title': 'Редактирование категории',
+        'category': category
+    }
+    return render(request, 'cash_app/category_form.html', context)
+
+@login_required
+@user_passes_test(is_admin)
+def category_delete(request, pk):
+    """Удаление категории"""
+    category = get_object_or_404(Category, pk=pk)
+    
+    # Проверяем, есть ли товары в этой категории
+    products_count = Product.objects.filter(category=category).count()
+    
+    if request.method == 'POST':
+        if products_count > 0:
+            messages.error(request, f'Нельзя удалить категорию, в которой есть товары ({products_count} шт.)')
+        else:
+            category.delete()
+            messages.success(request, f'Категория "{category.name}" удалена')
+        
+        return redirect('category_list')
+    
+    context = {
+        'category': category,
+        'products_count': products_count
+    }
+    return render(request, 'cash_app/category_confirm_delete.html', context)
+
+
+@login_required
+def save_collapsed_categories(request):
+    """Сохранение состояния свёрнутых категорий"""
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            collapsed = data.get('collapsed', [])
+            request.session['collapsed_categories'] = collapsed
+            request.session.modified = True
+            return JsonResponse({'status': 'ok'})
+        except:
+            return JsonResponse({'status': 'error'}, status=400)
+    return JsonResponse({'status': 'error'}, status=405)

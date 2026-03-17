@@ -93,6 +93,9 @@
                                     {{ plan.get_completion_percentage }}%
                                 </div>
                             </div>
+                            {% if plan.get_completion_percentage > 100 %}
+                                <span class="badge bg-success mt-1">Перевыполнение!</span>
+                            {% endif %}
                         </td>
                         <td>{{ plan.updated_at|date:"d.m.Y H:i" }}</td>
                         <td>{{ plan.updated_by.username|default:"—" }}</td>
@@ -120,6 +123,16 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // Установка ширины для всех прогресс-баров по data-width
+    document.querySelectorAll('[id^="progress-"]').forEach(function(el) {
+        var width = el.getAttribute('data-width');
+        if (width) {
+            // Ограничиваем ширину до 100% для визуального отображения
+            var displayWidth = Math.min(parseFloat(width), 100);
+            el.style.width = displayWidth + '%';
+        }
+    });
+
     // График
     var ctx = document.getElementById('salesChart').getContext('2d');
     new Chart(ctx, {
@@ -156,14 +169,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                 }
             }
-        }
-    });
-
-    // Установка ширины для всех прогресс-баров по data-width
-    document.querySelectorAll('[id^="progress-"]').forEach(function(el) {
-        var width = el.getAttribute('data-width');
-        if (width) {
-            el.style.width = width + '%';
         }
     });
 });
