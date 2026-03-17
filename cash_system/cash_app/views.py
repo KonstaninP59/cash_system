@@ -16,6 +16,7 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
 from io import BytesIO
+from django.db.models.functions import Lower
 import json
 import calendar
 
@@ -49,41 +50,66 @@ def index(request):
     """Главная страница"""
     return redirect('product_list')
 
+
 @login_required
 def product_list(request):
-    """Список товаров с фильтрацией по статусу"""
-    # Получаем параметр фильтра из URL
+    """Список товаров с фильтрацией по статусу и поиском"""
+    # Получаем параметры из URL
     filter_type = request.GET.get('filter', 'all')
+    search_query = request.GET.get('search', '').strip()
     
-    # Базовый запрос
-    products = Product.objects.all()
+    # Получаем все товары
+    all_products = Product.objects.all()
+    products_list = list(all_products)
     
-    # Применяем фильтр в зависимости от параметра
+    # Применяем поиск по названию или штрих-коду (регистронезависимый)
+    if search_query:
+        # Приводим поисковый запрос к нижнему регистру
+        search_query_lower = search_query.lower()
+        
+        filtered_products = []
+        for product in products_list:
+            # Приводим название и штрих-код к нижнему регистру
+            name_lower = product.name.lower() if product.name else ''
+            barcode_lower = product.barcode.lower() if product.barcode else ''
+            
+            # Проверяем вхождение
+            if search_query_lower in name_lower or search_query_lower in barcode_lower:
+                filtered_products.append(product)
+        
+        products_list = filtered_products
+        search_title = f'Результаты поиска: "{search_query}"'
+    else:
+        search_title = None
+    
+    # Применяем фильтр по статусу
     if filter_type == 'expired':
-        products = [p for p in products if p.is_expired()]
+        products_list = [p for p in products_list if p.is_expired()]
         filter_title = "Просроченные товары"
     elif filter_type == 'expiring_soon':
-        products = [p for p in products if p.is_expiring_soon()]
+        products_list = [p for p in products_list if p.is_expiring_soon()]
         filter_title = "Товары с истекающим сроком годности"
     else:
         filter_type = 'all'
         filter_title = "Все товары"
     
-    # Подсчет статистики (для всех товаров, без фильтра)
-    all_products = Product.objects.all()
+    # Подсчет статистики
     total_products = all_products.count()
     expired_count = sum(1 for p in all_products if p.is_expired())
     expiring_soon_count = sum(1 for p in all_products if p.is_expiring_soon())
     
     context = {
-        'products': products,
+        'products': products_list,
         'total_products': total_products,
         'expired_count': expired_count,
         'expiring_soon_count': expiring_soon_count,
         'current_filter': filter_type,
         'filter_title': filter_title,
+        'search_query': search_query,
+        'search_title': search_title,
     }
     return render(request, 'cash_app/product_list.html', context)
+
 
 @login_required
 def product_create(request):
@@ -657,9 +683,10 @@ def receipt_pdf(request):
     
     return response
 
+
 @login_required
 def dashboard_view(request):
-    """Дашборд эффективности"""
+    """Дашборд эффективности с улучшенным отображением"""
     now = timezone.now()
     start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     start_of_year = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -697,25 +724,23 @@ def dashboard_view(request):
         )
         week_total = sum(float(s.total_price or 0) for s in week_sales)
         
-        # Статистика по дням для графика
+        # Статистика по дням для графика - только дни с продажами
+        sales_by_day = {}
+        for sale in user_sales:
+            day = sale.date.day
+            if day not in sales_by_day:
+                sales_by_day[day] = 0
+            sales_by_day[day] += float(sale.total_price or 0)
+        
+        # Сортируем по дням и создаем данные для графика
         days_in_month = calendar.monthrange(now.year, now.month)[1]
         daily_data = []
         labels = []
         
         for day in range(1, days_in_month + 1):
-            day_date = datetime(now.year, now.month, day).date()
-            day_start = timezone.make_aware(datetime.combine(day_date, datetime.min.time()))
-            day_end = timezone.make_aware(datetime.combine(day_date, datetime.max.time()))
-            
-            day_sales = History.objects.filter(
-                type='sale',
-                user=request.user,
-                date__range=[day_start, day_end]
-            )
-            day_total = sum(float(s.total_price or 0) for s in day_sales)
-            
-            daily_data.append(day_total)
-            labels.append(day)
+            amount = sales_by_day.get(day, 0)
+            daily_data.append(round(amount, 2))
+            labels.append(str(day))
         
         context = {
             'plan': plan,
@@ -727,6 +752,7 @@ def dashboard_view(request):
             'week_total': week_total,
             'daily_data': json.dumps(daily_data),
             'labels': json.dumps(labels),
+            'has_sales': any(d > 0 for d in daily_data),
             'is_admin': False,
         }
         
@@ -754,38 +780,69 @@ def dashboard_view(request):
         
         # Статистика по планам
         users_with_plans = SalesPlan.objects.all().select_related('user', 'updated_by')
+
+        # Подсчет статистики выполнения
+        total_plans = users_with_plans.count()
+        half_completed = 0
+        over_completed = 0
         
-        # Продажи по дням для графика
+        for plan in users_with_plans:
+            percentage = plan.get_completion_percentage()
+            if percentage >= 100:
+                over_completed += 1
+                half_completed += 1
+            elif percentage >= 50:
+                half_completed += 1
+        
+        # Продажи по дням для графика - агрегированные данные
+        month_sales = History.objects.filter(
+            type='sale',
+            date__gte=start_of_month
+        ).select_related('product')
+        
+        sales_by_day = {}
+        for sale in month_sales:
+            day = sale.date.day
+            if day not in sales_by_day:
+                sales_by_day[day] = 0
+            sales_by_day[day] += float(sale.total_price or 0)
+        
         days_in_month = calendar.monthrange(now.year, now.month)[1]
         daily_data = []
         labels = []
         
         for day in range(1, days_in_month + 1):
-            day_date = datetime(now.year, now.month, day).date()
-            day_start = timezone.make_aware(datetime.combine(day_date, datetime.min.time()))
-            day_end = timezone.make_aware(datetime.combine(day_date, datetime.max.time()))
-            
-            day_sales = History.objects.filter(
-                type='sale',
-                date__range=[day_start, day_end]
-            )
-            day_total = sum(float(s.total_price or 0) for s in day_sales)
-            
-            daily_data.append(day_total)
-            labels.append(day)
+            amount = sales_by_day.get(day, 0)
+            daily_data.append(round(amount, 2))
+            labels.append(str(day))
+        
+        # Топ-3 товаров за месяц
+        top_products = History.objects.filter(
+            type='sale',
+            date__gte=start_of_month
+        ).values('product__name').annotate(
+            total=Sum('total_price'),
+            quantity=Sum('quantity')
+        ).order_by('-total')[:5]
         
         context = {
-            'total_monthly_sales': total_monthly_sales,
-            'total_yearly_sales': total_yearly_sales,
-            'sales_count': sales_count,
-            'average_check': total_monthly_sales / sales_count if sales_count > 0 else 0,
-            'users_with_plans': users_with_plans,
-            'daily_data': json.dumps(daily_data),
-            'labels': json.dumps(labels),
-            'is_admin': True,
+        'total_monthly_sales': total_monthly_sales,
+        'total_yearly_sales': total_yearly_sales,
+        'sales_count': sales_count,
+        'average_check': total_monthly_sales / sales_count if sales_count > 0 else 0,
+        'users_with_plans': users_with_plans,
+        'total_plans': total_plans,
+        'half_completed': half_completed,
+        'over_completed': over_completed,
+        'daily_data': json.dumps(daily_data),
+        'labels': json.dumps(labels),
+        'top_products': top_products,
+        'has_sales': any(d > 0 for d in daily_data),
+        'is_admin': True,
         }
         
         return render(request, 'cash_app/dashboard_admin.html', context)
+    
 
 @login_required
 @user_passes_test(is_admin)

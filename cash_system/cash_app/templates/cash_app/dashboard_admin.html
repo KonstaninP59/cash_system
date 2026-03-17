@@ -12,7 +12,8 @@
         <div class="card text-white bg-primary">
             <div class="card-body">
                 <h5 class="card-title">Выручка за месяц</h5>
-                <p class="display-6">{{ total_monthly_sales|floatformat:2 }} ₽</p>
+                <p class="display-6">{{ total_monthly_sales|floatformat:0 }} ₽</p>
+                <small class="text-white-50">средний чек: {{ average_check|floatformat:0 }} ₽</small>
             </div>
         </div>
     </div>
@@ -20,7 +21,7 @@
         <div class="card text-white bg-success">
             <div class="card-body">
                 <h5 class="card-title">Выручка за год</h5>
-                <p class="display-6">{{ total_yearly_sales|floatformat:2 }} ₽</p>
+                <p class="display-6">{{ total_yearly_sales|floatformat:0 }} ₽</p>
             </div>
         </div>
     </div>
@@ -29,14 +30,15 @@
             <div class="card-body">
                 <h5 class="card-title">Количество продаж</h5>
                 <p class="display-6">{{ sales_count }}</p>
+                <small class="text-white-50">за текущий месяц</small>
             </div>
         </div>
     </div>
     <div class="col-md-3">
         <div class="card text-white bg-warning">
             <div class="card-body">
-                <h5 class="card-title">Средний чек</h5>
-                <p class="display-6">{{ average_check|floatformat:2 }} ₽</p>
+                <h5 class="card-title">Активных планов</h5>
+                <p class="display-6">{{ total_plans }}</p>
             </div>
         </div>
     </div>
@@ -44,18 +46,93 @@
 
 <!-- График продаж по дням -->
 <div class="card shadow mb-4">
-    <div class="card-header bg-primary text-white">
-        <h5 class="mb-0">Продажи по дням (текущий месяц)</h5>
+    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-bar-chart"></i> Продажи по дням (текущий месяц)</h5>
     </div>
     <div class="card-body">
-        <canvas id="salesChart" style="height: 300px;"></canvas>
+        {% if has_sales %}
+        <canvas id="salesChart" style="height: 350px;"></canvas>
+        {% else %}
+        <div class="text-center py-5">
+            <i class="bi bi-bar-chart fs-1 d-block text-muted mb-3"></i>
+            <h5 class="text-muted">Нет данных о продажах за текущий месяц</h5>
+            <p class="text-muted">Продажи появятся здесь после первых покупок</p>
+        </div>
+        {% endif %}
     </div>
 </div>
 
-<!-- Все планы продаж -->
-<div class="card shadow">
+<!-- Топ товаров и планы продаж -->
+<div class="row">
+    <!-- Топ товаров -->
+    <div class="col-md-5 mb-4">
+        <div class="card shadow h-100">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0"><i class="bi bi-trophy"></i> Топ-3 товаров месяца</h5>
+            </div>
+            <div class="card-body">
+                {% if top_products %}
+                <div class="list-group">
+                    {% for product in top_products %}
+                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong>{{ forloop.counter }}.</strong> {{ product.product__name|default:"Товар" }}
+                            <span class="badge bg-secondary ms-2">{{ product.quantity }} шт</span>
+                        </div>
+                        <span class="text-success fw-bold">{{ product.total|floatformat:0 }} ₽</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="text-center py-4">
+                    <i class="bi bi-trophy fs-1 d-block text-muted mb-3"></i>
+                    <p class="text-muted">Нет данных о продажах</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- Краткая статистика по планам -->
+    <div class="col-md-7 mb-4">
+        <div class="card shadow h-100">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0"><i class="bi bi-people"></i> Статистика выполнения планов</h5>
+            </div>
+            <div class="card-body">
+                <div class="row text-center mb-3">
+                    <div class="col-4">
+                        <div class="p-3 bg-light rounded">
+                            <h3 class="mb-0">{{ total_plans }}</h3>
+                            <small class="text-muted">всего планов</small>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="p-3 bg-light rounded">
+                            <h3 class="mb-0">{{ half_completed }}</h3>
+                            <small class="text-muted">выполнено >50%</small>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="p-3 bg-light rounded">
+                            <h3 class="mb-0">{{ over_completed }}</h3>
+                            <small class="text-muted">перевыполнено</small>
+                        </div>
+                    </div>
+                </div>
+                
+                <a href="#plans-table" class="btn btn-outline-primary w-100" data-bs-toggle="collapse">
+                    <i class="bi bi-table"></i> Показать все планы
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Таблица всех планов (скрыта по умолчанию) -->
+<div class="card shadow collapse" id="plans-table">
     <div class="card-header bg-info text-white">
-        <h5 class="mb-0">Управление планами продаж</h5>
+        <h5 class="mb-0"><i class="bi bi-table"></i> Управление планами продаж</h5>
     </div>
     <div class="card-body">
         <div class="table-responsive">
@@ -63,30 +140,33 @@
                 <thead>
                     <tr>
                         <th>Пользователь</th>
-                        <th>Текущий план</th>
-                        <th>Продажи за месяц</th>
+                        <th>План</th>
+                        <th>Продажи</th>
                         <th>Выполнение</th>
-                        <th>Последнее обновление</th>
-                        <th>Кем обновлено</th>
+                        <th>Обновлен</th>
                         <th>Действия</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for plan in users_with_plans %}
                     <tr>
-                        <td>{{ plan.user.username }}</td>
-                        <td>{{ plan.monthly_target }} ₽</td>
-                        <td>{{ plan.get_current_month_sales|floatformat:2 }} ₽</td>
                         <td>
+                            <strong>{{ plan.user.username }}</strong>
+                            {% if plan.user.first_name %}
+                                <br><small class="text-muted">{{ plan.user.first_name }}</small>
+                            {% endif %}
+                        </td>
+                        <td>{{ plan.monthly_target|floatformat:0 }} ₽</td>
+                        <td>{{ plan.get_current_month_sales|floatformat:0 }} ₽</td>
+                        <td style="min-width: 150px;">
                             <div class="progress" style="height: 20px;">
                                 <div class="progress-bar 
                                     {% if plan.get_completion_percentage >= 100 %}bg-success
                                     {% elif plan.get_completion_percentage >= 75 %}bg-info
                                     {% elif plan.get_completion_percentage >= 50 %}bg-warning
                                     {% else %}bg-danger{% endif %}"
-                                    id="progress-{{ plan.id }}"
                                     role="progressbar"
-                                    data-width="{{ plan.get_completion_percentage }}"
+                                    style="width: {% widthratio plan.get_completion_percentage 1 1 %}%;"
                                     aria-valuenow="{{ plan.get_completion_percentage }}"
                                     aria-valuemin="0"
                                     aria-valuemax="100">
@@ -97,19 +177,25 @@
                                 <span class="badge bg-success mt-1">Перевыполнение!</span>
                             {% endif %}
                         </td>
-                        <td>{{ plan.updated_at|date:"d.m.Y H:i" }}</td>
-                        <td>{{ plan.updated_by.username|default:"—" }}</td>
+                        <td>
+                            <small>{{ plan.updated_at|date:"d.m.Y" }}</small>
+                            <br><small class="text-muted">{{ plan.updated_by.username|default:"—" }}</small>
+                        </td>
                         <td>
                             <a href="{% url 'plan_edit' plan.user.id %}" class="btn btn-sm btn-primary">
-                                <i class="bi bi-pencil"></i> Редактировать
+                                <i class="bi bi-pencil"></i>
+                            </a>
+                            <a href="{% url 'user_sales_detail' plan.user.id %}" class="btn btn-sm btn-info">
+                                <i class="bi bi-eye"></i>
                             </a>
                         </td>
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="7" class="text-center">
-                            Нет созданных планов. 
-                            <a href="/admin/cash_app/salesplan/add/" class="btn btn-sm btn-success">
+                        <td colspan="6" class="text-center py-4">
+                            <i class="bi bi-table fs-1 d-block text-muted mb-3"></i>
+                            <p class="text-muted">Нет созданных планов</p>
+                            <a href="/admin/cash_app/salesplan/add/" class="btn btn-success">
                                 <i class="bi bi-plus-lg"></i> Создать план
                             </a>
                         </td>
@@ -123,28 +209,38 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Установка ширины для всех прогресс-баров по data-width
-    document.querySelectorAll('[id^="progress-"]').forEach(function(el) {
-        var width = el.getAttribute('data-width');
-        if (width) {
-            // Ограничиваем ширину до 100% для визуального отображения
-            var displayWidth = Math.min(parseFloat(width), 100);
-            el.style.width = displayWidth + '%';
-        }
-    });
-
-    // График
+    {% if has_sales %}
+    // График продаж
     var ctx = document.getElementById('salesChart').getContext('2d');
+    
+    // Данные из Django
+    var labels = {{ labels|safe }};
+    var values = {{ daily_data|safe }};
+    
+    // Находим максимальное значение для масштабирования
+    var maxValue = Math.max(...values, 1);
+    
+    // Определяем шаг шкалы в зависимости от максимального значения
+    var stepSize;
+    if (maxValue <= 1000) stepSize = 100;
+    else if (maxValue <= 5000) stepSize = 500;
+    else if (maxValue <= 10000) stepSize = 1000;
+    else if (maxValue <= 50000) stepSize = 5000;
+    else if (maxValue <= 100000) stepSize = 10000;
+    else if (maxValue <= 500000) stepSize = 50000;
+    else stepSize = 100000;
+    
     new Chart(ctx, {
         type: 'bar',
         data: {
-            labels: '{{ labels|safe }}',
+            labels: labels,
             datasets: [{
-                label: 'Продажи за день (₽)',
-                data: '{{ daily_data|safe }}',
-                backgroundColor: 'rgba(13, 110, 253, 0.5)',
-                borderColor: 'rgba(13, 110, 253, 1)',
-                borderWidth: 1
+                label: 'Продажи (₽)',
+                data: values,
+                backgroundColor: 'rgba(40, 167, 69, 0.7)',
+                borderColor: 'rgba(40, 167, 69, 1)',
+                borderWidth: 1,
+                borderRadius: 4
             }]
         },
         options: {
@@ -153,10 +249,23 @@ document.addEventListener('DOMContentLoaded', function() {
             scales: {
                 y: {
                     beginAtZero: true,
+                    max: Math.ceil(maxValue / stepSize) * stepSize,
                     ticks: {
+                        stepSize: stepSize,
                         callback: function(value) {
-                            return value + ' ₽';
+                            if (value >= 1000000) {
+                                return (value / 1000000).toFixed(1) + 'M';
+                            } else if (value >= 1000) {
+                                return (value / 1000).toFixed(0) + 'K';
+                            }
+                            return value;
                         }
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Дни месяца'
                     }
                 }
             },
@@ -164,13 +273,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 tooltip: {
                     callbacks: {
                         label: function(context) {
-                            return context.raw + ' ₽';
+                            return 'Продажи: ' + context.raw.toLocaleString('ru-RU') + ' ₽';
                         }
                     }
+                },
+                legend: {
+                    display: false
                 }
             }
         }
     });
+    {% endif %}
 });
 </script>
 {% endblock %}

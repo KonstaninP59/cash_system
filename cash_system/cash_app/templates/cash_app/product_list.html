@@ -19,7 +19,7 @@
 <!-- Статистика с кликабельными карточками -->
 <div class="row mb-4">
     <div class="col-md-4">
-        <a href="?filter=all" class="text-decoration-none">
+        <a href="?filter=all{% if search_query %}&search={{ search_query }}{% endif %}" class="text-decoration-none">
             <div class="card text-white bg-primary {% if current_filter == 'all' %}shadow-lg border-3 border-white{% endif %}" style="cursor: pointer;">
                 <div class="card-body">
                     <h5 class="card-title">Всего товаров</h5>
@@ -29,7 +29,7 @@
         </a>
     </div>
     <div class="col-md-4">
-        <a href="?filter=expiring_soon" class="text-decoration-none">
+        <a href="?filter=expiring_soon{% if search_query %}&search={{ search_query }}{% endif %}" class="text-decoration-none">
             <div class="card text-white bg-warning {% if current_filter == 'expiring_soon' %}shadow-lg border-3 border-white{% endif %}" style="cursor: pointer;">
                 <div class="card-body">
                     <h5 class="card-title">Скоро истекают</h5>
@@ -39,7 +39,7 @@
         </a>
     </div>
     <div class="col-md-4">
-        <a href="?filter=expired" class="text-decoration-none">
+        <a href="?filter=expired{% if search_query %}&search={{ search_query }}{% endif %}" class="text-decoration-none">
             <div class="card text-white bg-danger {% if current_filter == 'expired' %}shadow-lg border-3 border-white{% endif %}" style="cursor: pointer;">
                 <div class="card-body">
                     <h5 class="card-title">Просрочено</h5>
@@ -50,22 +50,61 @@
     </div>
 </div>
 
-<!-- Заголовок с текущим фильтром и кнопкой сброса -->
+<!-- Поиск и фильтры -->
+<div class="row mb-4">
+    <div class="col-md-8">
+        <form method="get" class="d-flex gap-2">
+            <div class="flex-grow-1">
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="text" name="search" class="form-control" 
+                           placeholder="Поиск по названию или штрих-коду..." 
+                           value="{{ search_query }}"
+                           autocomplete="off">
+                    <input type="hidden" name="filter" value="{{ current_filter }}">
+                    {% if search_query %}
+                    <button class="btn btn-outline-secondary" type="button" 
+                            onclick="window.location.href='?filter={{ current_filter }}'">
+                        <i class="bi bi-x"></i>
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary">Найти</button>
+            {% if search_query %}
+                <a href="?filter={{ current_filter }}" class="btn btn-outline-secondary">
+                    Сбросить
+                </a>
+            {% endif %}
+        </form>
+    </div>
+    <div class="col-md-4 text-end">
+        {% if current_filter != 'all' or search_query %}
+            <a href="?filter=all" class="btn btn-outline-secondary">
+                <i class="bi bi-x-circle"></i> Сбросить все фильтры
+            </a>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Заголовок с текущим фильтром и результатами поиска -->
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h4>
-        {% if current_filter == 'expired' %}
-            <i class="bi bi-exclamation-triangle-fill text-danger"></i> Просроченные товары
-        {% elif current_filter == 'expiring_soon' %}
-            <i class="bi bi-clock-fill text-warning"></i> Товары с истекающим сроком
+        {% if search_title %}
+            <i class="bi bi-search"></i> {{ search_title }}
         {% else %}
-            <i class="bi bi-boxes"></i> Все товары
+            {% if current_filter == 'expired' %}
+                <i class="bi bi-exclamation-triangle-fill text-danger"></i> Просроченные товары
+            {% elif current_filter == 'expiring_soon' %}
+                <i class="bi bi-clock-fill text-warning"></i> Товары с истекающим сроком
+            {% else %}
+                <i class="bi bi-boxes"></i> Все товары
+            {% endif %}
+        {% endif %}
+        {% if products %}
+            <small class="text-muted ms-2">({{ products|length }} товаров)</small>
         {% endif %}
     </h4>
-    {% if current_filter != 'all' %}
-        <a href="?filter=all" class="btn btn-outline-secondary btn-sm">
-            <i class="bi bi-x-circle"></i> Сбросить фильтр
-        </a>
-    {% endif %}
 </div>
 
 <!-- Таблица товаров -->
@@ -77,6 +116,7 @@
                     <tr>
                         <th>Название</th>
                         <th>Штрих-код</th>
+                        <th>Категория</th>
                         <th>Количество</th>
                         <th>Ед.</th>
                         <th>Цена</th>
@@ -96,9 +136,16 @@
                                 <span class="text-muted">—</span>
                             {% endif %}
                         </td>
+                        <td>
+                            {% if product.category %}
+                                <span class="badge bg-info">{{ product.category.name }}</span>
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
                         <td>{{ product.quantity }}</td>
                         <td>{{ product.get_unit_display }}</td>
-                        <td>{{ product.price }} ₽</td>
+                        <td>{{ product.price|floatformat:2 }} ₽</td>
                         <td>{{ product.expiration_date|date:"d.m.Y" }}</td>
                         <td>
                             {% if product.get_status == 'expired' %}
@@ -125,10 +172,12 @@
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="8" class="text-center py-4">
+                        <td colspan="9" class="text-center py-4">
                             <i class="bi bi-inbox fs-1 d-block text-muted"></i>
                             <p class="text-muted">
-                                {% if current_filter == 'expired' %}
+                                {% if search_query %}
+                                    Товары по запросу "{{ search_query }}" не найдены
+                                {% elif current_filter == 'expired' %}
                                     Нет просроченных товаров
                                 {% elif current_filter == 'expiring_soon' %}
                                     Нет товаров с истекающим сроком

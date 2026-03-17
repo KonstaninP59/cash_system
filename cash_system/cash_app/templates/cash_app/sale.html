@@ -103,97 +103,98 @@
         </div>
     </div>
     
-    <!-- Правая колонка - корзина -->
-    <div class="col-md-4">
-        <div class="card shadow sticky-top" style="top: 20px;">
-            <div class="card-header bg-success text-white">
-                <h5 class="mb-0"><i class="bi bi-cart"></i> Корзина</h5>
-            </div>
-            <div class="card-body">
-                <!-- Блок купонов -->
-                {% if available_coupons %}
-                <div class="mb-3">
-                    <label class="form-label"><i class="bi bi-ticket-perforated"></i> Купон на скидку:</label>
-                    <form method="post" action="{% url 'apply_coupon' %}" class="d-flex gap-2">
-                        {% csrf_token %}
-                        <select name="coupon_id" class="form-select form-select-sm">
-                            <option value="">-- Выберите купон --</option>
-                            {% for coupon in available_coupons %}
-                                <option value="{{ coupon.id }}" {% if applied_coupon and applied_coupon.id == coupon.id %}selected{% endif %}>
-                                    {{ coupon.code }} ({{ coupon.discount_percent }}% скидка)
-                                </option>
-                            {% endfor %}
-                        </select>
-                        <button type="submit" class="btn btn-sm btn-outline-primary">Применить</button>
-                    </form>
-                    {% if applied_coupon %}
-                        <div class="mt-2">
-                            <span class="badge bg-success">Применен купон {{ applied_coupon.code }} (скидка {{ applied_coupon.discount_percent }}%)</span>
-                            <a href="{% url 'remove_coupon' %}" class="btn btn-sm btn-outline-danger ms-2">Убрать</a>
-                        </div>
-                    {% endif %}
-                </div>
-                <hr>
+<!-- Правая колонка - корзина -->
+<div class="col-md-4">
+    <div class="card shadow" style="position: sticky; top: 20px; max-height: calc(100vh - 100px); overflow-y: auto;">
+        <div class="card-header bg-success text-white sticky-top" style="top: 0; z-index: 10;">
+            <h5 class="mb-0"><i class="bi bi-cart"></i> Корзина</h5>
+        </div>
+        <div class="card-body">
+            <!-- Блок купонов -->
+            {% if available_coupons %}
+            <div class="mb-3">
+                <label class="form-label"><i class="bi bi-ticket-perforated"></i> Купон на скидку:</label>
+                <form method="post" action="{% url 'apply_coupon' %}" class="d-flex gap-2">
+                    {% csrf_token %}
+                    <select name="coupon_id" class="form-select form-select-sm">
+                        <option value="">-- Выберите купон --</option>
+                        {% for coupon in available_coupons %}
+                            <option value="{{ coupon.id }}" {% if applied_coupon and applied_coupon.id == coupon.id %}selected{% endif %}>
+                                {{ coupon.code }} ({{ coupon.discount_percent }}% скидка)
+                            </option>
+                        {% endfor %}
+                    </select>
+                    <button type="submit" class="btn btn-sm btn-outline-primary">Применить</button>
+                </form>
+                {% if applied_coupon %}
+                    <div class="mt-2">
+                        <span class="badge bg-success">Применен купон {{ applied_coupon.code }} (скидка {{ applied_coupon.discount_percent }}%)</span>
+                        <a href="{% url 'remove_coupon' %}" class="btn btn-sm btn-outline-danger ms-2">Убрать</a>
+                    </div>
                 {% endif %}
-                
-                <!-- Товары в корзине -->
-                {% if cart_items %}
-                    <div class="list-group mb-3">
-                        {% for item in cart_items %}
-                        <div class="list-group-item">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <div>
-                                    <h6 class="mb-1">{{ item.product.name }}</h6>
-                                    <small>{{ item.quantity }} {{ item.product.get_unit_display }} × {{ item.product.price|floatformat:2 }} ₽</small>
-                                </div>
-                                <div>
-                                    <strong>{{ item.subtotal|floatformat:2 }} ₽</strong>
-                                    <a href="{% url 'remove_from_cart' item.product.id %}" 
-                                       class="btn btn-sm btn-danger ms-2" title="Удалить">
-                                        <i class="bi bi-x"></i>
-                                    </a>
-                                </div>
+            </div>
+            <hr>
+            {% endif %}
+            
+            <!-- Товары в корзине -->
+            {% if cart_items %}
+                <div class="list-group mb-3" style="max-height: 300px; overflow-y: auto;">
+                    {% for item in cart_items %}
+                    <div class="list-group-item">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="mb-1">{{ item.product.name }}</h6>
+                                <small>{{ item.quantity }} {{ item.product.get_unit_display }} × {{ item.product.price|floatformat:2 }} ₽</small>
+                            </div>
+                            <div>
+                                <strong>{{ item.subtotal|floatformat:2 }} ₽</strong>
+                                <a href="{% url 'remove_from_cart' item.product.id %}" 
+                                   class="btn btn-sm btn-danger ms-2" title="Удалить">
+                                    <i class="bi bi-x"></i>
+                                </a>
                             </div>
                         </div>
-                        {% endfor %}
                     </div>
-                    
-                    <!-- Итоги со скидкой -->
+                    {% endfor %}
+                </div>
+                
+                <!-- Итоги со скидкой -->
+                <div class="border-top pt-3">
                     {% if discount_amount > 0 %}
-                        <div class="d-flex justify-content-between">
+                        <div class="d-flex justify-content-between small">
                             <span>Сумма без скидки:</span>
                             <span>{{ total|floatformat:2 }} ₽</span>
                         </div>
-                        <div class="d-flex justify-content-between text-danger">
+                        <div class="d-flex justify-content-between small text-danger">
                             <span>Скидка:</span>
                             <span>- {{ discount_amount|floatformat:2 }} ₽</span>
                         </div>
-                        <hr>
+                        <hr class="my-2">
                     {% endif %}
                     <div class="d-flex justify-content-between mb-3">
                         <h5>Итого:</h5>
                         <h5 class="text-success">{{ total_with_discount|floatformat:2 }} ₽</h5>
                     </div>
                     
-                    <form method="post" action="{% url 'sale' %}">
-                        {% csrf_token %}
-                        <div class="d-grid gap-2">
-                            <button type="submit" class="btn btn-success">
+                    <div class="d-grid gap-2">
+                        <form method="post" action="{% url 'sale' %}">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-success w-100">
                                 <i class="bi bi-cash"></i> Оформить продажу
                             </button>
-                            <a href="{% url 'clear_cart' %}" class="btn btn-outline-danger">
-                                <i class="bi bi-trash"></i> Очистить корзину
-                            </a>
-                        </div>
-                    </form>
-                {% else %}
-                    <div class="text-center py-4">
-                        <i class="bi bi-cart fs-1 d-block text-muted"></i>
-                        <p class="text-muted">Корзина пуста</p>
-                        <small class="text-muted">Добавьте товары из списка слева</small>
+                        </form>
+                        <a href="{% url 'clear_cart' %}" class="btn btn-outline-danger">
+                            <i class="bi bi-trash"></i> Очистить корзину
+                        </a>
                     </div>
-                {% endif %}
-            </div>
+                </div>
+            {% else %}
+                <div class="text-center py-4">
+                    <i class="bi bi-cart fs-1 d-block text-muted mb-3"></i>
+                    <p class="text-muted">Корзина пуста</p>
+                    <small class="text-muted">Добавьте товары из списка слева</small>
+                </div>
+            {% endif %}
         </div>
     </div>
 </div>

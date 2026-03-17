@@ -12,7 +12,7 @@
         <div class="card text-white bg-primary">
             <div class="card-body">
                 <h5 class="card-title">Месячный план</h5>
-                <p class="display-6">{{ plan.monthly_target }} ₽</p>
+                <p class="display-6">{{ plan.monthly_target|floatformat:0 }} ₽</p>
             </div>
         </div>
     </div>
@@ -20,23 +20,23 @@
         <div class="card text-white {% if completion_percentage >= 100 %}bg-success{% else %}bg-info{% endif %}">
             <div class="card-body">
                 <h5 class="card-title">Продано за месяц</h5>
-                <p class="display-6">{{ monthly_sales|floatformat:2 }} ₽</p>
+                <p class="display-6">{{ monthly_sales|floatformat:0 }} ₽</p>
             </div>
         </div>
     </div>
     <div class="col-md-3">
         <div class="card text-white bg-warning">
             <div class="card-body">
-                <h5 class="card-title">Осталось выполнить</h5>
-                <p class="display-6">{{ remaining_amount|floatformat:2 }} ₽</p>
+                <h5 class="card-title">Осталось</h5>
+                <p class="display-6">{{ remaining_amount|floatformat:0 }} ₽</p>
             </div>
         </div>
     </div>
     <div class="col-md-3">
         <div class="card text-white bg-secondary">
             <div class="card-body">
-                <h5 class="card-title">Средний чек в день</h5>
-                <p class="display-6">{{ daily_average|floatformat:2 }} ₽</p>
+                <h5 class="card-title">Средний чек</h5>
+                <p class="display-6">{{ daily_average|floatformat:0 }} ₽</p>
             </div>
         </div>
     </div>
@@ -55,7 +55,7 @@
                 {% elif completion_percentage >= 50 %}bg-warning
                 {% else %}bg-danger{% endif %}" 
                 role="progressbar"
-                data-width="{{ completion_percentage }}"
+                style="width: {% widthratio completion_percentage 1 1 %}%;" 
                 aria-valuenow="{{ completion_percentage }}" 
                 aria-valuemin="0" 
                 aria-valuemax="100">
@@ -74,11 +74,22 @@
 
 <!-- График продаж по дням -->
 <div class="card shadow mb-4">
-    <div class="card-header bg-primary text-white">
-        <h5 class="mb-0">Продажи по дням</h5>
+    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-bar-chart"></i> Мои продажи по дням</h5>
     </div>
     <div class="card-body">
+        {% if has_sales %}
         <canvas id="salesChart" style="height: 300px;"></canvas>
+        {% else %}
+        <div class="text-center py-5">
+            <i class="bi bi-bar-chart fs-1 d-block text-muted mb-3"></i>
+            <h5 class="text-muted">У вас пока нет продаж в этом месяце</h5>
+            <p class="text-muted">Перейдите в раздел "Продажи", чтобы начать продавать</p>
+            <a href="{% url 'sale' %}" class="btn btn-primary">
+                <i class="bi bi-cart"></i> Перейти к продажам
+            </a>
+        </div>
+        {% endif %}
     </div>
 </div>
 
@@ -87,20 +98,30 @@
     <div class="col-md-6">
         <div class="card shadow mb-4">
             <div class="card-header bg-success text-white">
-                <h5 class="mb-0">Продажи за сегодня</h5>
+                <h5 class="mb-0"><i class="bi bi-calendar-day"></i> Сегодня</h5>
             </div>
             <div class="card-body text-center">
-                <p class="display-4">{{ today_total|floatformat:2 }} ₽</p>
+                <p class="display-4">{{ today_total|floatformat:0 }} ₽</p>
+                {% if today_total > 0 %}
+                <span class="badge bg-success">Есть продажи - Вы молодец!</span>
+                {% else %}
+                <span class="badge bg-secondary">Нет продаж</span>
+                {% endif %}
             </div>
         </div>
     </div>
     <div class="col-md-6">
         <div class="card shadow mb-4">
             <div class="card-header bg-info text-white">
-                <h5 class="mb-0">Продажи за неделю</h5>
+                <h5 class="mb-0"><i class="bi bi-calendar-week"></i> За 7 дней</h5>
             </div>
             <div class="card-body text-center">
-                <p class="display-4">{{ week_total|floatformat:2 }} ₽</p>
+                <p class="display-4">{{ week_total|floatformat:0 }} ₽</p>
+                {% if week_total > 0 %}
+                <span class="badge bg-success">Активны</span>
+                {% else %}
+                <span class="badge bg-secondary">Нет активности</span>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -108,32 +129,39 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Установка ширины прогресс-бара
-    var progressBar = document.querySelector('.progress-bar');
-    if (progressBar) {
-        var width = progressBar.getAttribute('data-width');
-        if (width) {
-            // Ограничиваем ширину до 100% для визуального отображения,
-            // но процент выполнения показываем реальный
-            var displayWidth = Math.min(parseFloat(width), 100);
-            progressBar.style.width = displayWidth + '%';
-        }
-    }
-
-    // График
+    {% if has_sales %}
+    // График продаж
     var ctx = document.getElementById('salesChart').getContext('2d');
+    
+    // Данные из Django
+    var labels = {{ labels|safe }};
+    var values = {{ daily_data|safe }};
+    
+    // Находим максимальное значение для масштабирования
+    var maxValue = Math.max(...values, 1);
+    
+    // Определяем шаг шкалы
+    var stepSize;
+    if (maxValue <= 1000) stepSize = 100;
+    else if (maxValue <= 5000) stepSize = 500;
+    else if (maxValue <= 10000) stepSize = 1000;
+    else if (maxValue <= 50000) stepSize = 5000;
+    else stepSize = 10000;
+    
     new Chart(ctx, {
         type: 'line',
         data: {
-            labels: '{{ labels|safe }}',
+            labels: labels,
             datasets: [{
-                label: 'Продажи за день (₽)',
-                data: '{{ daily_data|safe }}',
-                backgroundColor: 'rgba(13, 110, 253, 0.2)',
+                label: 'Мои продажи (₽)',
+                data: values,
+                backgroundColor: 'rgba(13, 110, 253, 0.1)',
                 borderColor: 'rgba(13, 110, 253, 1)',
                 borderWidth: 2,
-                tension: 0.1,
-                fill: true
+                tension: 0.2,
+                fill: true,
+                pointBackgroundColor: 'rgba(13, 110, 253, 1)',
+                pointRadius: 4
             }]
         },
         options: {
@@ -142,9 +170,11 @@ document.addEventListener('DOMContentLoaded', function() {
             scales: {
                 y: {
                     beginAtZero: true,
+                    max: Math.ceil(maxValue / stepSize) * stepSize,
                     ticks: {
+                        stepSize: stepSize,
                         callback: function(value) {
-                            return value + ' ₽';
+                            return value.toLocaleString('ru-RU') + ' ₽';
                         }
                     }
                 }
@@ -153,13 +183,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 tooltip: {
                     callbacks: {
                         label: function(context) {
-                            return context.raw + ' ₽';
+                            return 'Продажи: ' + context.raw.toLocaleString('ru-RU') + ' ₽';
                         }
                     }
+                },
+                legend: {
+                    display: false
                 }
             }
         }
     });
+    {% endif %}
 });
 </script>
 {% endblock %}
