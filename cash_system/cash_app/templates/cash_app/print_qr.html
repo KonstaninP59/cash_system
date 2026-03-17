@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Печать QR-кода - {{ product.name }}</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding: 20px;
+        }
+        .qr-container {
+            margin: 20px auto;
+            padding: 20px;
+            border: 1px solid #ccc;
+            max-width: 300px;
+        }
+        .product-name {
+            font-size: 18px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .product-price {
+            font-size: 16px;
+            color: #28a745;
+            margin: 5px 0;
+        }
+        @media print {
+            .no-print {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="no-print">
+        <button onclick="window.print()">Печать</button>
+        <button onclick="window.close()">Закрыть</button>
+    </div>
+    
+    <div class="qr-container">
+        {% if product.qr_code %}
+            <img src="{{ product.qr_code.url }}" alt="QR-код" style="max-width: 200px;">
+        {% else %}
+            <p>QR-код не сгенерирован</p>
+        {% endif %}
+        
+        <div class="product-name">{{ product.name }}</div>
+        <div class="product-price">{{ product.price }} ₽/{{ product.get_unit_display }}</div>
+        <div>Штрих-код: {{ product.barcode|default:"—" }}</div>
+    </div>
+</body>
+</html>

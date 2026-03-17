@@ -69,6 +69,10 @@
                     </button>
                     {% endif %}
                 </div>
+                <small class="text-muted">
+                    <i class="bi bi-info-circle"></i> 
+                    Можно искать по части названия: "бан" найдет "Банан"
+                </small>
             </div>
             <button type="submit" class="btn btn-primary">Найти</button>
             {% if search_query %}
@@ -116,6 +120,7 @@
                     <tr>
                         <th>Название</th>
                         <th>Штрих-код</th>
+                        <th>QR-код</th>
                         <th>Категория</th>
                         <th>Количество</th>
                         <th>Ед.</th>
@@ -134,6 +139,17 @@
                                 <span class="badge bg-secondary">{{ product.barcode }}</span>
                             {% else %}
                                 <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if product.qr_code %}
+                                <span class="badge bg-success" title="QR-код сгенерирован">
+                                    <i class="bi bi-check-circle"></i>
+                                </span>
+                            {% else %}
+                                <span class="badge bg-secondary" title="QR-код не сгенерирован">
+                                    <i class="bi bi-x-circle"></i>
+                                </span>
                             {% endif %}
                         </td>
                         <td>
@@ -165,6 +181,24 @@
                                     <i class="bi bi-trash"></i>
                                 </a>
                             {% endif %}
+                            <div class="btn-group">
+                                <button type="button" class="btn btn-sm btn-info dropdown-toggle" data-bs-toggle="dropdown" title="QR-код">
+                                    <i class="bi bi-qr-code"></i>
+                                </button>
+                                <ul class="dropdown-menu">
+                                    <li><a class="dropdown-item" href="{% url 'generate_product_qr' product.pk %}">
+                                        <i class="bi bi-plus-circle"></i> Сгенерировать
+                                    </a></li>
+                                    {% if product.qr_code %}
+                                    <li><a class="dropdown-item" href="{% url 'download_product_qr' product.pk %}" target="_blank">
+                                        <i class="bi bi-download"></i> Скачать
+                                    </a></li>
+                                    <li><a class="dropdown-item" href="{% url 'print_product_qr' product.pk %}" target="_blank">
+                                        <i class="bi bi-printer"></i> Печать
+                                    </a></li>
+                                    {% endif %}
+                                </ul>
+                            </div>
                             <a href="{% url 'product_delete' product.pk %}" class="btn btn-sm btn-danger" title="Удалить">
                                 <i class="bi bi-x-lg"></i>
                             </a>
@@ -172,7 +206,7 @@
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="9" class="text-center py-4">
+                        <td colspan="10" class="text-center py-4">
                             <i class="bi bi-inbox fs-1 d-block text-muted"></i>
                             <p class="text-muted">
                                 {% if search_query %}

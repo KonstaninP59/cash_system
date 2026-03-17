@@ -6,6 +6,7 @@ from django.contrib import messages
 from django.db import transaction
 from django.db.models import Q, Sum, Count, F
 from django.http import HttpResponse, JsonResponse
+from django.urls import reverse
 from django.utils import timezone
 from datetime import date, timedelta, datetime
 from .models import Product, History, SalesPlan, Category, Coupon
@@ -17,6 +18,10 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
 from io import BytesIO
 from django.db.models.functions import Lower
+import qrcode
+import uuid
+from django.core.files.base import ContentFile
+from django.views.decorators.csrf import csrf_exempt
 import json
 import calendar
 
@@ -1070,3 +1075,173 @@ def save_collapsed_categories(request):
         except:
             return JsonResponse({'status': 'error'}, status=400)
     return JsonResponse({'status': 'error'}, status=405)
+
+
+@login_required
+def scan_qr(request):
+    """Страница сканирования QR-кода"""
+    action = request.GET.get('action', 'add_to_cart')  # add_to_cart или receipt
+    return render(request, 'cash_app/scan_qr.html', {
+        'scan_action': action,
+        'scanned_product': None
+    })
+
+
+@login_required
+def scan_qr_result(request):
+    """Обработка результата сканирования QR-кода"""
+    qr_data = request.GET.get('data', '')
+    action = request.GET.get('action', 'add_to_cart')
+    
+    if not qr_data:
+        messages.error(request, 'Не удалось прочитать QR-код')
+        return redirect('scan_qr')
+    
+    # Парсим данные из QR-кода (ожидаем формат "product:uuid")
+    try:
+        if qr_data.startswith('product:'):
+            qr_uuid = qr_data.replace('product:', '')
+            product = Product.objects.get(qr_uuid=qr_uuid)
+            
+            # Сохраняем в сессии для следующего шага
+            request.session['scanned_product_id'] = product.id
+            request.session['scan_action'] = action
+            
+            return render(request, 'cash_app/scan_qr.html', {
+                'scanned_product': product,
+                'scan_action': action
+            })
+        else:
+            messages.error(request, 'Неверный формат QR-кода')
+    except Product.DoesNotExist:
+        messages.error(request, 'Товар не найден')
+    except Exception as e:
+        messages.error(request, f'Ошибка: {str(e)}')
+    
+    return redirect('scan_qr')
+
+
+@login_required
+def scan_qr_upload(request):
+    """Обработка загруженного изображения с QR-кодом"""
+    if request.method == 'POST' and request.FILES.get('qr_image'):
+        from pyzbar.pyzbar import decode
+        from PIL import Image
+        import io
+        
+        action = request.POST.get('action', 'add_to_cart')
+        
+        try:
+            # Читаем загруженное изображение
+            image_file = request.FILES['qr_image']
+            image = Image.open(io.BytesIO(image_file.read()))
+            
+            # Декодируем QR-код
+            decoded_objects = decode(image)
+            
+            if decoded_objects:
+                qr_data = decoded_objects[0].data.decode('utf-8')
+                return redirect(f"{reverse('scan_qr_result')}?data={qr_data}&action={action}")
+            else:
+                messages.error(request, 'На изображении не найден QR-код')
+        except Exception as e:
+            messages.error(request, f'Ошибка при обработке изображения: {str(e)}')
+    
+    return redirect('scan_qr')
+
+
+@login_required
+def process_qr_action(request):
+    """Обработка действия после сканирования QR-кода"""
+    if request.method == 'POST':
+        product_id = request.POST.get('product_id')
+        quantity = int(request.POST.get('quantity', 1))
+        action = request.POST.get('action')
+        
+        product = get_object_or_404(Product, pk=product_id)
+        
+        if action == 'add_to_cart':
+            # Добавление в корзину для продажи
+            if product.quantity < quantity:
+                messages.error(request, f'Недостаточно товара "{product.name}" на складе')
+                return redirect('sale')
+            
+            if product.expiration_date < date.today():
+                messages.error(request, f'Товар "{product.name}" просрочен и не может быть продан')
+                return redirect('sale')
+            
+            cart = request.session.get('cart', {})
+            product_id_str = str(product.id)
+            
+            if product_id_str in cart:
+                cart[product_id_str]['quantity'] += quantity
+            else:
+                cart[product_id_str] = {
+                    'quantity': quantity,
+                    'price': str(product.price)
+                }
+            
+            request.session['cart'] = cart
+            request.session.modified = True
+            
+            messages.success(request, f'Товар "{product.name}" добавлен в корзину')
+            return redirect('sale')
+            
+        elif action == 'receipt':
+            # Оформление поступления товара
+            product.quantity += quantity
+            product.save()
+            
+            History.objects.create(
+                type='receipt',
+                product=product,
+                quantity=quantity,
+                user=request.user
+            )
+            
+            messages.success(request, f'Поступление товара "{product.name}" оформлено. Добавлено {quantity} {product.get_unit_display()}')
+            return redirect('product_list')
+    
+    return redirect('scan_qr')
+
+
+@login_required
+def generate_product_qr(request, product_id):
+    """Генерация QR-кода для существующего товара (на случай если его нет)"""
+    product = get_object_or_404(Product, pk=product_id)
+    
+    if not product.qr_code:
+        product.generate_qr_code()
+        product.save()
+        messages.success(request, f'QR-код для товара "{product.name}" сгенерирован')
+    else:
+        messages.info(request, f'QR-код для товара "{product.name}" уже существует')
+    
+    return redirect('product_list')
+
+
+@login_required
+def download_product_qr(request, product_id):
+    """Скачивание QR-кода товара"""
+    product = get_object_or_404(Product, pk=product_id)
+    
+    if not product.qr_code:
+        product.generate_qr_code()
+        product.save()
+    
+    from django.http import FileResponse
+    import os
+    
+    response = FileResponse(product.qr_code, as_attachment=True, filename=f'qr_{product.name}.png')
+    return response
+
+@login_required
+def print_product_qr(request, product_id):
+    """Печать QR-кода товара (открывает в новом окне для печати)"""
+    product = get_object_or_404(Product, pk=product_id)
+    
+    if not product.qr_code:
+        product.generate_qr_code()
+        product.save()
+    
+    return render(request, 'cash_app/print_qr.html', {'product': product})

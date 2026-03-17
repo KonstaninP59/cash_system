@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.models import User
+from django.utils.html import format_html
 from .models import Product, History, SalesPlan, Category, Coupon
 
 class CategoryAdmin(admin.ModelAdmin):
@@ -8,9 +9,10 @@ class CategoryAdmin(admin.ModelAdmin):
     search_fields = ['name']
 
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ['name', 'category', 'quantity', 'price', 'unit', 'expiration_date', 'get_status']
+    list_display = ['name', 'category', 'quantity', 'price', 'unit', 'expiration_date', 'get_status', 'has_qr']
     list_filter = ['category', 'expiration_date', 'unit']
     search_fields = ['name', 'barcode']
+    readonly_fields = ['qr_uuid', 'qr_code_preview']
     
     def get_status(self, obj):
         if obj.is_expired():
@@ -19,6 +21,17 @@ class ProductAdmin(admin.ModelAdmin):
             return 'Скоро истекает'
         return 'Нормальный'
     get_status.short_description = 'Статус'
+    
+    def has_qr(self, obj):
+        return bool(obj.qr_code)
+    has_qr.boolean = True
+    has_qr.short_description = 'QR-код'
+    
+    def qr_code_preview(self, obj):
+        if obj.qr_code:
+            return format_html('<img src="{}" style="max-height: 100px;" />', obj.qr_code.url)
+        return "Нет QR-кода"
+    qr_code_preview.short_description = 'Превью QR-кода'
 
 class CouponAdmin(admin.ModelAdmin):
     list_display = ['code', 'discount_percent', 'is_active', 'valid_from', 'valid_until', 'used_count', 'max_uses']

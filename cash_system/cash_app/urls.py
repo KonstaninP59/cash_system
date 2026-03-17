@@ -16,6 +16,15 @@ urlpatterns = [
     # Штрих-код
     path('barcode/', views.barcode_add, name='barcode_add'),
     
+    # QR-коды
+    path('scan-qr/', views.scan_qr, name='scan_qr'),
+    path('scan-qr/result/', views.scan_qr_result, name='scan_qr_result'),
+    path('scan-qr/upload/', views.scan_qr_upload, name='scan_qr_upload'),
+    path('scan-qr/process/', views.process_qr_action, name='process_qr_action'),
+    path('product/<int:product_id>/generate-qr/', views.generate_product_qr, name='generate_product_qr'),
+    path('product/<int:product_id>/download-qr/', views.download_product_qr, name='download_product_qr'),
+    path('product/<int:product_id>/print-qr/', views.print_product_qr, name='print_product_qr'),
+    
     # История
     path('history/', views.history_list, name='history_list'),
     
@@ -26,6 +35,7 @@ urlpatterns = [
     path('sale/clear/', views.clear_cart, name='clear_cart'),
     path('sale/apply-coupon/', views.apply_coupon, name='apply_coupon'),
     path('sale/remove-coupon/', views.remove_coupon, name='remove_coupon'),
+    path('sale/save-collapsed/', views.save_collapsed_categories, name='save_collapsed'),
     
     # Чек
     path('receipt/', views.receipt_view, name='receipt_view'),
@@ -41,12 +51,10 @@ urlpatterns = [
     path('coupons/create/', views.coupon_create, name='coupon_create'),
     path('coupons/<int:pk>/edit/', views.coupon_edit, name='coupon_edit'),
     path('coupons/<int:pk>/delete/', views.coupon_delete, name='coupon_delete'),
-
+    
     # Категории (только для администратора)
     path('categories/', views.category_list, name='category_list'),
     path('categories/create/', views.category_create, name='category_create'),
     path('categories/<int:pk>/edit/', views.category_edit, name='category_edit'),
     path('categories/<int:pk>/delete/', views.category_delete, name='category_delete'),
-
-    path('sale/save-collapsed/', views.save_collapsed_categories, name='save_collapsed'),
 ]

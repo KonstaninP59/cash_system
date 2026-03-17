@@ -51,6 +51,22 @@
                             <i class="bi bi-graph-up"></i> Эффективность
                         </a>
                     </li>
+                    
+                    <!-- QR-код меню -->
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="qrDropdown" role="button" data-bs-toggle="dropdown">
+                            <i class="bi bi-qr-code-scan"></i> QR-код
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{% url 'scan_qr' %}?action=add_to_cart">
+                                <i class="bi bi-cart-plus"></i> Сканировать для продажи
+                            </a></li>
+                            <li><a class="dropdown-item" href="{% url 'scan_qr' %}?action=receipt">
+                                <i class="bi bi-box-seam"></i> Сканировать для поступления
+                            </a></li>
+                        </ul>
+                    </li>
+                    
                     {% if user.is_superuser or user.is_staff %}
                     <li class="nav-item">
                         <a class="nav-link {% if request.resolver_match.url_name == 'coupon_list' %}active{% endif %}" 
@@ -58,11 +74,9 @@
                             <i class="bi bi-ticket"></i> Купоны
                         </a>
                     </li>
-                    {% endif %}
-                    {% if user.is_superuser or user.is_staff %}
                     <li class="nav-item">
                         <a class="nav-link {% if request.resolver_match.url_name == 'category_list' %}active{% endif %}" 
-                        href="{% url 'category_list' %}">
+                           href="{% url 'category_list' %}">
                             <i class="bi bi-folder"></i> Категории
                         </a>
                     </li>

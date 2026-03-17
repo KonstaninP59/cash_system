@@ -1,0 +1,162 @@
+{% extends 'cash_app/base.html' %}
+{% load static %}
+
+{% block title %} - Сканирование QR-кода{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0"><i class="bi bi-qr-code-scan"></i> Сканирование QR-кода</h4>
+            </div>
+            <div class="card-body">
+                <ul class="nav nav-tabs mb-4" id="qrTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="camera-tab" data-bs-toggle="tab" data-bs-target="#camera" type="button" role="tab">
+                            <i class="bi bi-camera"></i> Камера
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="upload-tab" data-bs-toggle="tab" data-bs-target="#upload" type="button" role="tab">
+                            <i class="bi bi-cloud-upload"></i> Загрузить фото
+                        </button>
+                    </li>
+                </ul>
+                
+                <div class="tab-content" id="qrTabsContent">
+                    <!-- Вкладка с камерой -->
+                    <div class="tab-pane fade show active" id="camera" role="tabpanel">
+                        <div class="text-center mb-3">
+                            <div id="qr-reader" style="width: 100%; max-width: 500px; margin: 0 auto;"></div>
+                        </div>
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i>
+                            Наведите камеру на QR-код товара. Сканирование произойдет автоматически.
+                        </div>
+                    </div>
+                    
+                    <!-- Вкладка с загрузкой файла -->
+                    <div class="tab-pane fade" id="upload" role="tabpanel">
+                        <form method="post" enctype="multipart/form-data" action="{% url 'scan_qr_upload' %}">
+                            {% csrf_token %}
+                            <div class="mb-3">
+                                <label for="qr_image" class="form-label">Выберите изображение с QR-кодом</label>
+                                <input type="file" class="form-control" id="qr_image" name="qr_image" accept="image/*" required>
+                            </div>
+                            <input type="hidden" name="action" value="{{ request.GET.action|default:'add_to_cart' }}">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-search"></i> Распознать QR-код
+                            </button>
+                        </form>
+                    </div>
+                </div>
+                
+                <hr>
+                
+                <div class="text-center">
+                    <a href="javascript:history.back()" class="btn btn-secondary">
+                        <i class="bi bi-arrow-left"></i> Назад
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Результат сканирования (будет показан после обработки) -->
+{% if scanned_product %}
+<div class="row justify-content-center mt-4">
+    <div class="col-md-8">
+        <div class="card shadow border-success">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0"><i class="bi bi-check-circle"></i> Товар найден</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4 text-center">
+                        {% if scanned_product.qr_code %}
+                            <img src="{{ scanned_product.qr_code.url }}" alt="QR-код" class="img-fluid mb-3" style="max-width: 150px;">
+                        {% endif %}
+                    </div>
+                    <div class="col-md-8">
+                        <h4>{{ scanned_product.name }}</h4>
+                        <table class="table table-sm">
+                            <tr>
+                                <th>Цена:</th>
+                                <td>{{ scanned_product.price }} ₽/{{ scanned_product.get_unit_display }}</td>
+                            </tr>
+                            <tr>
+                                <th>В наличии:</th>
+                                <td>{{ scanned_product.quantity }} {{ scanned_product.get_unit_display }}</td>
+                            </tr>
+                            <tr>
+                                <th>Срок годности:</th>
+                                <td>{{ scanned_product.expiration_date|date:"d.m.Y" }}</td>
+                            </tr>
+                        </table>
+                        
+                        <form method="post" action="{% url 'process_qr_action' %}">
+                            {% csrf_token %}
+                            <input type="hidden" name="product_id" value="{{ scanned_product.id }}">
+                            <input type="hidden" name="action" value="{{ scan_action }}">
+                            
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <label for="quantity" class="form-label">Количество:</label>
+                                    <input type="number" class="form-control" id="quantity" name="quantity" 
+                                           value="1" min="1" max="{{ scanned_product.quantity }}" required>
+                                </div>
+                            </div>
+                            
+                            <div class="mt-3">
+                                {% if scan_action == 'add_to_cart' %}
+                                    <button type="submit" class="btn btn-success">
+                                        <i class="bi bi-cart-plus"></i> Добавить в корзину
+                                    </button>
+                                {% elif scan_action == 'receipt' %}
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="bi bi-box-seam"></i> Оформить поступление
+                                    </button>
+                                {% endif %}
+                                <a href="{% url 'scan_qr' %}?action={{ scan_action }}" class="btn btn-secondary">
+                                    <i class="bi bi-qr-code-scan"></i> Сканировать другой
+                                </a>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Подключаем библиотеку для сканирования QR-кодов -->
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Инициализация сканера QR-кодов
+    const html5QrCode = new Html5Qrcode("qr-reader");
+    
+    // Настройки сканера
+    const qrCodeSuccessCallback = (decodedText, decodedResult) => {
+        // Останавливаем сканирование
+        html5QrCode.stop();
+        
+        // Отправляем результат на сервер
+        window.location.href = "{% url 'scan_qr_result' %}?data=" + encodeURIComponent(decodedText) + "&action=" + encodeURIComponent("{{ request.GET.action|default:'add_to_cart' }}");
+    };
+    
+    const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+    
+    // Запрашиваем разрешение на использование камеры
+    html5QrCode.start({ facingMode: "environment" }, config, qrCodeSuccessCallback)
+        .catch(err => {
+            console.error("Ошибка доступа к камере:", err);
+            document.getElementById('qr-reader').innerHTML = '<div class="alert alert-danger">Не удалось получить доступ к камере. Проверьте разрешения или используйте загрузку фото.</div>';
+        });
+});
+</script>
+{% endblock %}

@@ -1,7 +1,11 @@
+import qrcode
+from io import BytesIO
+from django.core.files.base import ContentFile
 from django.db import models
 from django.contrib.auth.models import User
 from datetime import date
 from django.utils import timezone
+import uuid
 
 class Category(models.Model):
     """Модель категории товаров"""
@@ -26,6 +30,8 @@ class Product(models.Model):
     
     name = models.CharField('Название', max_length=200)
     barcode = models.CharField('Штрих-код', max_length=50, blank=True, null=True, unique=True)
+    qr_code = models.ImageField('QR-код', upload_to='qrcodes/', blank=True, null=True)
+    qr_uuid = models.UUIDField('UUID для QR', default=uuid.uuid4, editable=False, unique=True)
     category = models.ForeignKey(
         Category,
         on_delete=models.SET_NULL,
@@ -49,6 +55,35 @@ class Product(models.Model):
     def __str__(self):
         return f"{self.name} ({self.get_unit_display()})"
 
+    def save(self, *args, **kwargs):
+        # Генерируем QR-код при создании товара
+        if not self.qr_code and self.pk:  # Генерируем только если товар уже сохранен (есть id)
+            self.generate_qr_code()
+        super().save(*args, **kwargs)
+
+    def generate_qr_code(self):
+        """Генерация QR-кода для товара"""
+        # Данные для QR-кода (UUID товара)
+        qr_data = f"product:{self.qr_uuid}"
+        
+        # Создаем QR-код
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=10,
+            border=4,
+        )
+        qr.add_data(qr_data)
+        qr.make(fit=True)
+        
+        img = qr.make_image(fill_color="black", back_color="white")
+        
+        # Сохраняем в поле ImageField
+        buffer = BytesIO()
+        img.save(buffer, format='PNG')
+        filename = f'qr_{self.id}_{self.qr_uuid}.png'
+        self.qr_code.save(filename, ContentFile(buffer.getvalue()), save=False)
+
     def is_expired(self):
         return self.expiration_date < date.today()
 
@@ -64,6 +99,12 @@ class Product(models.Model):
         elif self.is_expiring_soon():
             return 'expiring_soon'
         return 'good'
+
+    def get_qr_url(self):
+        """Получить URL QR-кода"""
+        if self.qr_code:
+            return self.qr_code.url
+        return None
 
 class Coupon(models.Model):
     """Модель купона на скидку"""
@@ -166,7 +207,6 @@ class SalesPlan(models.Model):
         if self.monthly_target == 0:
             return 0
         current = self.get_current_month_sales()
-        # Убираем min(100, ...) чтобы показывать процент даже больше 100
         return round((current / float(self.monthly_target)) * 100, 1)
 
     def get_remaining_amount(self):
