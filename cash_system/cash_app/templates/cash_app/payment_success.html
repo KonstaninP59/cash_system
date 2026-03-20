@@ -1,0 +1,58 @@
+{% extends 'cash_app/base.html' %}
+{% load static %}
+
+{% block title %} - Оплата успешна{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6 col-lg-5">
+        <div class="card shadow border-success">
+            <div class="card-header bg-success text-white text-center">
+                <h4 class="mb-0"><i class="bi bi-check-circle-fill"></i> Оплата прошла успешно!</h4>
+            </div>
+            <div class="card-body text-center">
+                <i class="bi bi-credit-card fs-1 text-success mb-3 d-block"></i>
+                
+                <h3 class="mb-3">{{ receipt.total|floatformat:2 }} ₽</h3>
+                
+                <div class="alert alert-success">
+                    <i class="bi bi-check-circle"></i>
+                    Платеж успешно обработан. Товары списаны со склада.
+                </div>
+                
+                {% if receipt.payment_info %}
+                <div class="card bg-light mb-3">
+                    <div class="card-body">
+                        <h6 class="mb-2">Детали платежа:</h6>
+                        <p class="mb-1 small">ID платежа: {{ receipt.payment_info.payment_id|default:receipt.sale_group|default:"—" }}</p>
+                        <p class="mb-0 small">Время: {{ receipt.date }}</p>
+                    </div>
+                </div>
+                {% endif %}
+                
+                <div class="d-flex gap-2 mt-4">
+                    <a href="{% url 'receipt_view' %}" class="btn btn-primary flex-grow-1">
+                        <i class="bi bi-receipt"></i> Просмотреть чек
+                    </a>
+                    <a href="{% url 'receipt_pdf' %}" class="btn btn-secondary flex-grow-1" target="_blank">
+                        <i class="bi bi-file-pdf"></i> Скачать PDF
+                    </a>
+                </div>
+                
+                <div class="mt-3">
+                    <a href="{% url 'sale' %}" class="btn btn-outline-success w-100">
+                        <i class="bi bi-cart"></i> Новая продажа
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Автоматический перенаправление на чек через 5 секунд (опционально)
+setTimeout(function() {
+    window.location.href = "{% url 'receipt_view' %}";
+}, 5000);
+</script>
+{% endblock %}

@@ -54,4 +54,11 @@ urlpatterns = [
     path('categories/create/', views.category_create, name='category_create'),
     path('categories/<int:pk>/edit/', views.category_edit, name='category_edit'),
     path('categories/<int:pk>/delete/', views.category_delete, name='category_delete'),
+
+    # Оплата
+    path('payment/page/', views.payment_page, name='payment_page'),
+    path('payment/process/', views.process_payment, name='process_payment'),
+    path('payment/success/', views.payment_success, name='payment_success'),
+    path('payment/status/', views.terminal_status, name='terminal_status'),
+    path('payment/callback/', views.payment_callback, name='payment_callback'),
 ]

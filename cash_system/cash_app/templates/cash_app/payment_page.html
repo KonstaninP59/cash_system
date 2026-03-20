@@ -1,0 +1,51 @@
+{% extends 'cash_app/base.html' %}
+{% load static %}
+
+{% block title %} - Оплата{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card shadow">
+            <div class="card-header bg-warning text-dark">
+                <h4 class="mb-0"><i class="bi bi-credit-card"></i> Оплата через терминал</h4>
+            </div>
+            <div class="card-body text-center">
+                <h2 class="mb-4">{{ total|floatformat:2 }} ₽</h2>
+                
+                <div id="terminal-status" class="mb-3">
+                    <span class="badge bg-secondary">Проверка терминала...</span>
+                </div>
+                
+                <form method="post" action="{% url 'process_payment' %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-success btn-lg w-100 mb-2" id="payBtn">
+                        <i class="bi bi-credit-card"></i> Оплатить
+                    </button>
+                </form>
+                
+                <a href="{% url 'sale' %}" class="btn btn-outline-danger w-100">Отмена</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function checkTerminal() {
+    fetch('{% url "terminal_status" %}')
+        .then(r => r.json())
+        .then(data => {
+            const el = document.getElementById('terminal-status');
+            if (data.connected) {
+                el.innerHTML = '<span class="badge bg-success">✓ Терминал готов</span>';
+                document.getElementById('payBtn').disabled = false;
+            } else {
+                el.innerHTML = '<span class="badge bg-danger">✗ Терминал не доступен. Запустите Kaspi POS Simulator</span>';
+                document.getElementById('payBtn').disabled = true;
+            }
+        });
+}
+checkTerminal();
+setInterval(checkTerminal, 3000);
+</script>
+{% endblock %}

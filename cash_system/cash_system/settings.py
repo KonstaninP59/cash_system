@@ -102,3 +102,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'product_list'
 LOGOUT_REDIRECT_URL = 'login'
+
+# Настройки для оплаты
+SERVER_HOST = '127.0.0.1'  # Или ваш IP
+SERVER_PORT = '8000'  # Порт Django сервера

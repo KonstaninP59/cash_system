@@ -5,7 +5,7 @@
 
 {% block content %}
 <div class="row justify-content-center">
-    <div class="col-md-6">
+    <div class="col-md-6 col-lg-5">
         <div class="card shadow">
             <div class="card-header bg-success text-white">
                 <h4 class="mb-0"><i class="bi bi-receipt"></i> Чек операции</h4>
@@ -18,46 +18,58 @@
                     {% if receipt.coupon_code %}
                         <p class="text-muted">Купон: {{ receipt.coupon_code }}</p>
                     {% endif %}
+                    {% if receipt.payment_info %}
+                        <p class="text-muted">ID платежа: {{ receipt.payment_info.payment_id|default:receipt.sale_group|default:"—" }}</p>
+                    {% endif %}
                 </div>
                 
-                <table class="table table-sm">
-                    <thead class="table-light">
-                        <tr>
-                            <th>№</th>
-                            <th>Товар</th>
-                            <th>Кол-во</th>
-                            <th>Цена</th>
-                            <th>Сумма</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for item in receipt.items %}
-                        <tr>
-                            <td>{{ forloop.counter }}</td>
-                            <td>{{ item.name }}</td>
-                            <td>{{ item.quantity }} {{ item.unit }}</td>
-                            <td>{{ item.price|floatformat:2 }} ₽</td>
-                            <td class="text-end">{{ item.total|floatformat:2 }} ₽</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                    <tfoot class="table-light">
-                        <tr>
-                            <th colspan="4" class="text-end">ПОДЫТОГ:</th>
-                            <th class="text-end">{{ receipt.subtotal|floatformat:2 }} ₽</th>
-                        </tr>
-                        {% if receipt.discount > 0 %}
-                        <tr>
-                            <th colspan="4" class="text-end text-danger">СКИДКА:</th>
-                            <th class="text-end text-danger">-{{ receipt.discount|floatformat:2 }} ₽</th>
-                        </tr>
-                        {% endif %}
-                        <tr>
-                            <th colspan="4" class="text-end">ИТОГО:</th>
-                            <th class="text-end">{{ receipt.total|floatformat:2 }} ₽</th>
-                        </tr>
-                    </tfoot>
-                </table>
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead class="table-light">
+                            <tr>
+                                <th>№</th>
+                                <th>Товар</th>
+                                <th>Кол-во</th>
+                                <th>Цена</th>
+                                <th>Сумма</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in receipt.items %}
+                            <tr>
+                                <td>{{ forloop.counter }}</td>
+                                <td>{{ item.name }}</td>
+                                <td>{{ item.quantity }} {{ item.unit }}</td>
+                                <td>{{ item.price|floatformat:2 }} ₽</td>
+                                <td class="text-end">{{ item.total|floatformat:2 }} ₽</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot class="table-light">
+                            <tr>
+                                <th colspan="4" class="text-end">ПОДЫТОГ:</th>
+                                <th class="text-end">{{ receipt.subtotal|floatformat:2 }} ₽</th>
+                            </tr>
+                            {% if receipt.discount > 0 %}
+                            <tr>
+                                <th colspan="4" class="text-end text-danger">СКИДКА:</th>
+                                <th class="text-end text-danger">-{{ receipt.discount|floatformat:2 }} ₽</th>
+                            </tr>
+                            {% endif %}
+                            <tr>
+                                <th colspan="4" class="text-end">ИТОГО:</th>
+                                <th class="text-end">{{ receipt.total|floatformat:2 }} ₽</th>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+                
+                <div class="alert alert-success text-center mt-3">
+                    <i class="bi bi-check-circle-fill"></i> 
+                    <strong>Оплата успешно проведена</strong>
+                    <br>
+                    <small>Товары списаны со склада</small>
+                </div>
                 
                 <div class="text-center mt-4">
                     <p class="mb-1">Спасибо за покупку!</p>
@@ -66,16 +78,65 @@
                 
                 <hr>
                 
-                <div class="d-flex justify-content-between">
-                    <a href="{% url 'sale' %}" class="btn btn-primary">
+                <div class="d-flex justify-content-between flex-wrap gap-2">
+                    <a href="{% url 'sale' %}" class="btn btn-primary flex-grow-1 flex-sm-grow-0">
                         <i class="bi bi-cart"></i> Новая продажа
                     </a>
-                    <a href="{% url 'receipt_pdf' %}" class="btn btn-success" target="_blank">
-                        <i class="bi bi-file-pdf"></i> Скачать PDF
-                    </a>
+                    <div class="d-flex gap-2 flex-grow-1 flex-sm-grow-0">
+                        <a href="{% url 'receipt_pdf' %}" class="btn btn-secondary" target="_blank">
+                            <i class="bi bi-file-pdf"></i> <span class="d-none d-sm-inline">Скачать PDF</span>
+                            <span class="d-inline d-sm-none">PDF</span>
+                        </a>
+                        <button onclick="window.print()" class="btn btn-outline-secondary" title="Печать чека">
+                            <i class="bi bi-printer"></i> <span class="d-none d-sm-inline">Печать</span>
+                            <span class="d-inline d-sm-none">🖨️</span>
+                        </button>
+                    </div>
                 </div>
+                
+                <!-- Информация о транзакции -->
+                {% if receipt.payment_info or receipt.sale_group %}
+                <div class="mt-3 pt-3 border-top">
+                    <small class="text-muted d-block text-center">
+                        <i class="bi bi-info-circle"></i>
+                        Транзакция: {{ receipt.payment_info.transaction_id|default:receipt.sale_group|default:"—" }}
+                    </small>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
 </div>
+
+<style>
+@media print {
+    .btn, .no-print {
+        display: none !important;
+    }
+    .card {
+        border: none !important;
+        box-shadow: none !important;
+    }
+    .card-header {
+        background-color: white !important;
+        color: black !important;
+        border-bottom: 2px solid #000 !important;
+    }
+    .alert {
+        border: 1px solid #28a745 !important;
+        background: #f8f9fa !important;
+        color: #28a745 !important;
+    }
+}
+</style>
+
+<script>
+Автоматическая печать чека (опционально)
+Раскомментируйте если нужно автоматически печатать чек
+window.onload = function() {
+    setTimeout(function() {
+        window.print();
+    }, 500);
+};
+</script>
 {% endblock %}
