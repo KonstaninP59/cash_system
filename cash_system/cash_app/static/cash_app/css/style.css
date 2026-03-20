@@ -1,8 +1,20 @@
-/* Дополнительные стили */
+/* Основные стили */
+:root {
+    --primary-color: #0d6efd;
+    --success-color: #198754;
+    --warning-color: #ffc107;
+    --danger-color: #dc3545;
+    --info-color: #0dcaf0;
+    --dark-color: #212529;
+    --light-color: #f8f9fa;
+}
+
+/* Общие стили */
 body {
     min-height: 100vh;
     display: flex;
     flex-direction: column;
+    font-size: 16px;
 }
 
 main {
@@ -13,32 +25,123 @@ main {
     margin-top: auto;
 }
 
-/* Стили для карточек товаров */
+/* Адаптивные карточки */
 .card {
-    transition: transform 0.2s;
+    transition: transform 0.2s, box-shadow 0.2s;
 }
 
 .card:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
 }
 
-/* Стили для таблиц */
-.table-hover tbody tr:hover {
-    background-color: rgba(0,123,255,0.05);
+/* Адаптивные таблицы */
+.table-responsive {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
-/* Адаптивность для мобильных устройств */
+.table {
+    min-width: 600px;
+}
+
+/* Адаптивные кнопки */
+.btn {
+    white-space: nowrap;
+}
+
+/* Адаптивные карточки статистики */
+.stat-card {
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.stat-card:hover {
+    transform: translateY(-5px);
+}
+
+.stat-card .display-4 {
+    font-size: calc(1.5rem + 1.5vw);
+}
+
+/* Адаптивные карточки товаров в продажах */
+.product-card {
+    height: 100%;
+    transition: transform 0.2s;
+}
+
+.product-card:hover {
+    transform: translateY(-2px);
+}
+
+/* Корзина на мобильных устройствах */
 @media (max-width: 768px) {
-    .display-4 {
-        font-size: 2rem;
+    /* Скрываем sticky эффект на мобильных */
+    .cart-sticky {
+        position: static !important;
+        margin-top: 1rem;
+    }
+    
+    /* Уменьшаем отступы */
+    .container {
+        padding-left: 12px;
+        padding-right: 12px;
+    }
+    
+    /* Увеличиваем размер кнопок для мобильных */
+    .btn {
+        padding: 0.5rem 1rem;
+        font-size: 0.9rem;
+    }
+    
+    /* Адаптивные карточки статистики */
+    .stat-card .display-4 {
+        font-size: 1.8rem;
+    }
+    
+    .stat-card h5 {
+        font-size: 0.9rem;
+    }
+    
+    /* Уменьшаем заголовки */
+    h1 {
+        font-size: 1.5rem;
+    }
+    
+    h2 {
+        font-size: 1.3rem;
+    }
+    
+    /* Корзина */
+    .cart-items {
+        max-height: 250px !important;
     }
 }
 
-/* Стили для статусов */
-.badge {
-    font-size: 0.9em;
-    padding: 0.5em 0.7em;
+/* Планшеты (768px - 992px) */
+@media (min-width: 768px) and (max-width: 992px) {
+    .stat-card .display-4 {
+        font-size: 2rem;
+    }
+    
+    .product-card {
+        margin-bottom: 1rem;
+    }
+    
+    /* Навигация */
+    .navbar-nav {
+        margin-top: 0.5rem;
+    }
+}
+
+/* Десктоп (более 992px) */
+@media (min-width: 992px) {
+    .sticky-cart {
+        position: sticky;
+        top: 20px;
+        max-height: calc(100vh - 100px);
+        overflow-y: auto;
+    }
 }
 
 /* Анимации */
@@ -57,54 +160,154 @@ main {
     }
 }
 
-/* Стили для sticky корзины */
-.sticky-top {
-    z-index: 1000;
+/* Стили для прогресс-баров */
+.progress {
+    background-color: #e9ecef;
+    border-radius: 0.375rem;
+    overflow: hidden;
 }
 
-/* Цветовые схемы для просроченных товаров */
-.table-danger {
-    background-color: rgba(220, 53, 69, 0.1) !important;
+.progress-bar {
+    transition: width 0.6s ease;
 }
 
-.table-warning {
-    background-color: rgba(255, 193, 7, 0.1) !important;
+/* Стили для категорий */
+.category-header {
+    transition: background-color 0.2s;
 }
 
-/* Стили для кнопок */
-.btn {
-    border-radius: 5px;
+.category-header:hover {
+    background-color: #e9ecef !important;
 }
 
-.btn-sm {
-    border-radius: 3px;
+.category-content {
+    transition: all 0.3s ease;
 }
 
-/* Стили для форм */
+/* Стили для таблицы истории */
+.history-row {
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.history-row:hover {
+    background-color: rgba(13, 110, 253, 0.05);
+}
+
+.sale-details {
+    background-color: #f8f9fa;
+}
+
+/* Стили для графика */
+canvas {
+    max-width: 100%;
+    height: auto !important;
+}
+
+/* Стили для QR-сканера */
+#qr-reader {
+    width: 100%;
+    max-width: 500px;
+    margin: 0 auto;
+}
+
+/* Модальные окна */
+.modal-content {
+    border-radius: 1rem;
+}
+
+/* Формы */
 .form-control:focus {
-    border-color: #80bdff;
-    box-shadow: 0 0 0 0.2rem rgba(0,123,255,0.25);
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
 }
 
-/* Стили для навигации */
-.navbar-brand {
-    font-weight: 500;
+/* Навигация на мобильных */
+@media (max-width: 768px) {
+    .navbar-brand {
+        font-size: 1.2rem;
+    }
+    
+    .navbar-nav {
+        max-height: 70vh;
+        overflow-y: auto;
+    }
+    
+    .dropdown-menu {
+        position: static !important;
+        transform: none !important;
+        width: 100%;
+        margin-top: 0;
+        border: none;
+        background-color: transparent;
+    }
+    
+    .dropdown-menu .dropdown-item {
+        padding-left: 2rem;
+        color: rgba(255, 255, 255, 0.8);
+    }
+    
+    .dropdown-menu .dropdown-item:hover {
+        background-color: rgba(255, 255, 255, 0.1);
+        color: white;
+    }
+    
+    .dropdown-toggle::after {
+        display: none;
+    }
 }
 
-.nav-link.active {
-    font-weight: 500;
-    background-color: rgba(255,255,255,0.1);
-    border-radius: 5px;
+/* Стили для печати */
+@media print {
+    .no-print {
+        display: none !important;
+    }
+    
+    .card {
+        border: none;
+        box-shadow: none;
+    }
+    
+    .btn {
+        display: none;
+    }
 }
 
-/* Стили для карточек статистики */
-.card.text-white .card-body {
-    padding: 1.25rem;
+/* Улучшенная читаемость */
+@media (max-width: 576px) {
+    body {
+        font-size: 14px;
+    }
+    
+    .table {
+        font-size: 12px;
+    }
+    
+    .badge {
+        font-size: 10px;
+    }
+    
+    .display-4 {
+        font-size: 1.5rem;
+    }
+    
+    .display-6 {
+        font-size: 1.2rem;
+    }
+    
+    /* Убираем hover эффекты на мобильных */
+    .card:hover {
+        transform: none;
+    }
+    
+    .stat-card:hover {
+        transform: none;
+    }
 }
 
-.card.text-white .display-4 {
-    font-size: 2.5rem;
-    font-weight: 300;
-    line-height: 1.2;
-    margin-bottom: 0;
+/* Стили для темной темы (опционально) */
+@media (prefers-color-scheme: dark) {
+    body {
+        background-color: #f8f9fa;
+    }
 }
