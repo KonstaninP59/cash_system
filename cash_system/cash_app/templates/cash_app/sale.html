@@ -67,12 +67,16 @@
                                 <div class="card-body">
                                     <h6 class="card-title">{{ product.name }}</h6>
                                     <p class="card-text">
-                                        <span class="badge bg-secondary">В наличии: {{ product.quantity }} {{ product.get_unit_display }}</span><br>
+                                        <span class="badge bg-secondary">
+                                            В наличии: 
+                                            {% if product.unit == 'kg' %}
+                                                {{ product.quantity|floatformat:3 }} {{ product.get_unit_display }}
+                                            {% else %}
+                                                {{ product.quantity|floatformat:0 }} {{ product.get_unit_display }}
+                                            {% endif %}
+                                        </span><br>
                                         <strong>Цена: {{ product.price|floatformat:2 }} ₽/{{ product.get_unit_display }}</strong><br>
                                         <small class="text-muted">Годен до: {{ product.expiration_date|date:"d.m.Y" }}</small>
-                                        {% if product.barcode %}
-                                            <br><small class="text-muted">ШК: {{ product.barcode }}</small>
-                                        {% endif %}
                                     </p>
                                     
                                     {% if product.is_expiring_soon %}
@@ -86,11 +90,17 @@
                                         <input type="hidden" name="product_id" value="{{ product.id }}">
                                         <div class="input-group">
                                             <input type="number" name="quantity" class="form-control form-control-sm" 
-                                                   value="1" min="1" max="{{ product.quantity }}">
+                                                   value="1" 
+                                                   step="{% if product.unit == 'kg' %}0.001{% else %}1{% endif %}"
+                                                   min="{% if product.unit == 'kg' %}0.001{% else %}1{% endif %}" 
+                                                   max="{{ product.quantity }}">
                                             <button type="submit" class="btn btn-sm btn-success">
                                                 <i class="bi bi-cart-plus"></i>
                                             </button>
                                         </div>
+                                        {% if product.unit == 'kg' %}
+                                        <small class="text-muted d-block mt-1">Можно указать дробное количество (от 0,001 кг)</small>
+                                        {% endif %}
                                     </form>
                                 </div>
                             </div>
@@ -103,98 +113,108 @@
         </div>
     </div>
     
-<!-- Правая колонка - корзина -->
-<div class="col-md-4">
-    <div class="card shadow" style="position: sticky; top: 20px; max-height: calc(100vh - 100px); overflow-y: auto;">
-        <div class="card-header bg-success text-white sticky-top" style="top: 0; z-index: 10;">
-            <h5 class="mb-0"><i class="bi bi-cart"></i> Корзина</h5>
-        </div>
-        <div class="card-body">
-            <!-- Блок купонов -->
-            {% if available_coupons %}
-            <div class="mb-3">
-                <label class="form-label"><i class="bi bi-ticket-perforated"></i> Купон на скидку:</label>
-                <form method="post" action="{% url 'apply_coupon' %}" class="d-flex gap-2">
-                    {% csrf_token %}
-                    <select name="coupon_id" class="form-select form-select-sm">
-                        <option value="">-- Выберите купон --</option>
-                        {% for coupon in available_coupons %}
-                            <option value="{{ coupon.id }}" {% if applied_coupon and applied_coupon.id == coupon.id %}selected{% endif %}>
-                                {{ coupon.code }} ({{ coupon.discount_percent }}% скидка)
-                            </option>
+    <!-- Правая колонка - корзина -->
+    <div class="col-md-4">
+        <div class="card shadow" style="position: sticky; top: 20px; max-height: calc(100vh - 100px); overflow-y: auto;">
+            <div class="card-header bg-success text-white d-flex justify-content-between align-items-center sticky-top" style="top: 0; z-index: 10;">
+                <h5 class="mb-0"><i class="bi bi-cart"></i> Корзина</h5>
+                <a href="{% url 'scan_qr' %}?action=add_to_cart" class="btn btn-sm btn-light">
+                    <i class="bi bi-qr-code-scan"></i> Сканировать QR
+                </a>
+            </div>
+            <div class="card-body">
+                <!-- Блок купонов -->
+                {% if available_coupons %}
+                <div class="mb-3">
+                    <label class="form-label"><i class="bi bi-ticket-perforated"></i> Купон на скидку:</label>
+                    <form method="post" action="{% url 'apply_coupon' %}" class="d-flex gap-2">
+                        {% csrf_token %}
+                        <select name="coupon_id" class="form-select form-select-sm">
+                            <option value="">-- Выберите купон --</option>
+                            {% for coupon in available_coupons %}
+                                <option value="{{ coupon.id }}" {% if applied_coupon and applied_coupon.id == coupon.id %}selected{% endif %}>
+                                    {{ coupon.code }} ({{ coupon.discount_percent }}% скидка)
+                                </option>
+                            {% endfor %}
+                        </select>
+                        <button type="submit" class="btn btn-sm btn-outline-primary">Применить</button>
+                    </form>
+                    {% if applied_coupon %}
+                        <div class="mt-2">
+                            <span class="badge bg-success">Применен купон {{ applied_coupon.code }} (скидка {{ applied_coupon.discount_percent }}%)</span>
+                            <a href="{% url 'remove_coupon' %}" class="btn btn-sm btn-outline-danger ms-2">Убрать</a>
+                        </div>
+                    {% endif %}
+                </div>
+                <hr>
+                {% endif %}
+                
+                <!-- Товары в корзине -->
+                {% if cart_items %}
+                    <div class="list-group mb-3" style="max-height: 300px; overflow-y: auto;">
+                        {% for item in cart_items %}
+                        <div class="list-group-item">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h6 class="mb-1">{{ item.product.name }}</h6>
+                                    <small>
+                                        {% if item.product.unit == 'kg' %}
+                                            {{ item.quantity|floatformat:3 }} {{ item.product.get_unit_display }} × {{ item.product.price|floatformat:2 }} ₽
+                                        {% else %}
+                                            {{ item.quantity|floatformat:0 }} {{ item.product.get_unit_display }} × {{ item.product.price|floatformat:2 }} ₽
+                                        {% endif %}
+                                    </small>
+                                </div>
+                                <div>
+                                    <strong>{{ item.subtotal|floatformat:2 }} ₽</strong>
+                                    <a href="{% url 'remove_from_cart' item.product.id %}" 
+                                       class="btn btn-sm btn-danger ms-2" title="Удалить">
+                                        <i class="bi bi-x"></i>
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
                         {% endfor %}
-                    </select>
-                    <button type="submit" class="btn btn-sm btn-outline-primary">Применить</button>
-                </form>
-                {% if applied_coupon %}
-                    <div class="mt-2">
-                        <span class="badge bg-success">Применен купон {{ applied_coupon.code }} (скидка {{ applied_coupon.discount_percent }}%)</span>
-                        <a href="{% url 'remove_coupon' %}" class="btn btn-sm btn-outline-danger ms-2">Убрать</a>
+                    </div>
+                    
+                    <!-- Итоги со скидкой -->
+                    <div class="border-top pt-3">
+                        {% if discount_amount > 0 %}
+                            <div class="d-flex justify-content-between small">
+                                <span>Сумма без скидки:</span>
+                                <span>{{ total|floatformat:2 }} ₽</span>
+                            </div>
+                            <div class="d-flex justify-content-between small text-danger">
+                                <span>Скидка:</span>
+                                <span>- {{ discount_amount|floatformat:2 }} ₽</span>
+                            </div>
+                            <hr class="my-2">
+                        {% endif %}
+                        <div class="d-flex justify-content-between mb-3">
+                            <h5>Итого:</h5>
+                            <h5 class="text-success">{{ total_with_discount|floatformat:2 }} ₽</h5>
+                        </div>
+                        
+                        <div class="d-grid gap-2">
+                            <form method="post" action="{% url 'sale' %}">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-success w-100">
+                                    <i class="bi bi-cash"></i> Оформить продажу
+                                </button>
+                            </form>
+                            <a href="{% url 'clear_cart' %}" class="btn btn-outline-danger">
+                                <i class="bi bi-trash"></i> Очистить корзину
+                            </a>
+                        </div>
+                    </div>
+                {% else %}
+                    <div class="text-center py-4">
+                        <i class="bi bi-cart fs-1 d-block text-muted mb-3"></i>
+                        <p class="text-muted">Корзина пуста</p>
+                        <small class="text-muted">Добавьте товары из списка слева или отсканируйте QR-код</small>
                     </div>
                 {% endif %}
             </div>
-            <hr>
-            {% endif %}
-            
-            <!-- Товары в корзине -->
-            {% if cart_items %}
-                <div class="list-group mb-3" style="max-height: 300px; overflow-y: auto;">
-                    {% for item in cart_items %}
-                    <div class="list-group-item">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <h6 class="mb-1">{{ item.product.name }}</h6>
-                                <small>{{ item.quantity }} {{ item.product.get_unit_display }} × {{ item.product.price|floatformat:2 }} ₽</small>
-                            </div>
-                            <div>
-                                <strong>{{ item.subtotal|floatformat:2 }} ₽</strong>
-                                <a href="{% url 'remove_from_cart' item.product.id %}" 
-                                   class="btn btn-sm btn-danger ms-2" title="Удалить">
-                                    <i class="bi bi-x"></i>
-                                </a>
-                            </div>
-                        </div>
-                    </div>
-                    {% endfor %}
-                </div>
-                
-                <!-- Итоги со скидкой -->
-                <div class="border-top pt-3">
-                    {% if discount_amount > 0 %}
-                        <div class="d-flex justify-content-between small">
-                            <span>Сумма без скидки:</span>
-                            <span>{{ total|floatformat:2 }} ₽</span>
-                        </div>
-                        <div class="d-flex justify-content-between small text-danger">
-                            <span>Скидка:</span>
-                            <span>- {{ discount_amount|floatformat:2 }} ₽</span>
-                        </div>
-                        <hr class="my-2">
-                    {% endif %}
-                    <div class="d-flex justify-content-between mb-3">
-                        <h5>Итого:</h5>
-                        <h5 class="text-success">{{ total_with_discount|floatformat:2 }} ₽</h5>
-                    </div>
-                    
-                    <div class="d-grid gap-2">
-                        <form method="post" action="{% url 'sale' %}">
-                            {% csrf_token %}
-                            <button type="submit" class="btn btn-success w-100">
-                                <i class="bi bi-cash"></i> Оформить продажу
-                            </button>
-                        </form>
-                        <a href="{% url 'clear_cart' %}" class="btn btn-outline-danger">
-                            <i class="bi bi-trash"></i> Очистить корзину
-                        </a>
-                    </div>
-                </div>
-            {% else %}
-                <div class="text-center py-4">
-                    <i class="bi bi-cart fs-1 d-block text-muted mb-3"></i>
-                    <p class="text-muted">Корзина пуста</p>
-                    <small class="text-muted">Добавьте товары из списка слева</small>
-                </div>
-            {% endif %}
         </div>
     </div>
 </div>
@@ -229,7 +249,6 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
         
-        // Отправляем на сервер через AJAX
         fetch('{% url "save_collapsed" %}', {
             method: 'POST',
             headers: {
@@ -243,7 +262,6 @@ document.addEventListener('DOMContentLoaded', function() {
     // Обработчик клика по заголовку категории
     document.querySelectorAll('.category-header').forEach(function(header) {
         header.addEventListener('click', function(e) {
-            // Не сворачиваем, если клик по кнопке управления
             if (e.target.closest('.category-actions')) {
                 return;
             }
@@ -256,7 +274,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 this.classList.toggle('collapsed');
                 content.classList.toggle('show');
                 
-                // Меняем иконку
                 if (icon) {
                     if (this.classList.contains('collapsed')) {
                         icon.classList.remove('bi-chevron-down');

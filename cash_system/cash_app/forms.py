@@ -13,29 +13,29 @@ class LoginForm(AuthenticationForm):
         widget=forms.PasswordInput(attrs={'class': 'form-control', 'placeholder': 'Введите пароль'})
     )
 
+
 class ProductForm(forms.ModelForm):
     """Форма для товара"""
     class Meta:
         model = Product
-        fields = ['name', 'barcode', 'category', 'quantity', 'price', 'unit', 'expiration_date']
+        fields = ['name', 'category', 'quantity', 'price', 'unit', 'expiration_date']
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Название товара'}),
-            'barcode': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Штрих-код (необязательно)'}),
             'category': forms.Select(attrs={'class': 'form-control'}),
-            'quantity': forms.NumberInput(attrs={'class': 'form-control', 'min': 0}),
-            'price': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': 0}),
+            'quantity': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.001', 'min': '0'}),
+            'price': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0'}),
             'unit': forms.Select(attrs={'class': 'form-control'}),
             'expiration_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
         }
         labels = {
             'name': 'Название',
-            'barcode': 'Штрих-код',
             'category': 'Категория',
             'quantity': 'Количество',
             'price': 'Цена',
             'unit': 'Единица измерения',
             'expiration_date': 'Срок годности',
         }
+
 
 class BarcodeForm(forms.Form):
     """Форма для добавления по штрих-коду"""

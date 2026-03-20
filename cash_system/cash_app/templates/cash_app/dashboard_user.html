@@ -19,8 +19,9 @@
     <div class="col-md-3">
         <div class="card text-white {% if completion_percentage >= 100 %}bg-success{% else %}bg-info{% endif %}">
             <div class="card-body">
-                <h5 class="card-title">Продано за месяц</h5>
+                <h5 class="card-title">Продано за месяц на</h5>
                 <p class="display-6">{{ monthly_sales|floatformat:0 }} ₽</p>
+                <small class="text-white-50"> </small>
             </div>
         </div>
     </div>
@@ -36,7 +37,8 @@
         <div class="card text-white bg-secondary">
             <div class="card-body">
                 <h5 class="card-title">Средний чек</h5>
-                <p class="display-6">{{ daily_average|floatformat:0 }} ₽</p>
+                <p class="display-6">{{ average_check|floatformat:0 }} ₽</p>
+                <small class="text-white-50">Всего чеков: {{ sales_count }}</small>
             </div>
         </div>
     </div>
@@ -103,7 +105,7 @@
             <div class="card-body text-center">
                 <p class="display-4">{{ today_total|floatformat:0 }} ₽</p>
                 {% if today_total > 0 %}
-                <span class="badge bg-success">Есть продажи - Вы молодец!</span>
+                <span class="badge bg-success">Есть продажи</span>
                 {% else %}
                 <span class="badge bg-secondary">Нет продаж</span>
                 {% endif %}

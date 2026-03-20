@@ -6,39 +6,64 @@
 {% block content %}
 <h1 class="mb-4"><i class="bi bi-graph-up"></i> Дашборд эффективности (Администратор)</h1>
 
-<!-- Общая статистика -->
-<div class="row mb-4">
+<!-- Общая статистика - в одну строку -->
+<div class="row g-3 mb-4">
     <div class="col-md-3">
-        <div class="card text-white bg-primary">
+        <div class="card bg-primary text-white h-100 shadow-sm">
             <div class="card-body">
-                <h5 class="card-title">Выручка за месяц</h5>
-                <p class="display-6">{{ total_monthly_sales|floatformat:0 }} ₽</p>
-                <small class="text-white-50">средний чек: {{ average_check|floatformat:0 }} ₽</small>
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <h6 class="card-title text-white-50 mb-2">Средний чек</h6>
+                        <h2 class="mb-0 fw-bold">{{ average_check|floatformat:0 }} ₽</h2>
+                        <small class="text-white-50">всего чеков: {{ sales_count }}</small>
+                    </div>
+                    <i class="bi bi-receipt fs-1 text-white-50"></i>
+                </div>
             </div>
         </div>
     </div>
+    
     <div class="col-md-3">
-        <div class="card text-white bg-success">
+        <div class="card bg-success text-white h-100 shadow-sm">
             <div class="card-body">
-                <h5 class="card-title">Выручка за год</h5>
-                <p class="display-6">{{ total_yearly_sales|floatformat:0 }} ₽</p>
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <h6 class="card-title text-white-50 mb-2">Выручка за год</h6>
+                        <h2 class="mb-0 fw-bold">{{ total_yearly_sales|floatformat:0 }} ₽</h2>
+                        <small class="text-white-50">с начала года</small>
+                    </div>
+                    <i class="bi bi-calendar-range fs-1 text-white-50"></i>
+                </div>
             </div>
         </div>
     </div>
+    
     <div class="col-md-3">
-        <div class="card text-white bg-info">
+        <div class="card bg-info text-white h-100 shadow-sm">
             <div class="card-body">
-                <h5 class="card-title">Количество продаж</h5>
-                <p class="display-6">{{ sales_count }}</p>
-                <small class="text-white-50">за текущий месяц</small>
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <h6 class="card-title text-white-50 mb-2">Количество продаж</h6>
+                        <h2 class="mb-0 fw-bold">{{ sales_count }}</h2>
+                        <small class="text-white-50">за текущий месяц</small>
+                    </div>
+                    <i class="bi bi-cart-check fs-1 text-white-50"></i>
+                </div>
             </div>
         </div>
     </div>
+    
     <div class="col-md-3">
-        <div class="card text-white bg-warning">
+        <div class="card bg-warning text-dark h-100 shadow-sm">
             <div class="card-body">
-                <h5 class="card-title">Активных планов</h5>
-                <p class="display-6">{{ total_plans }}</p>
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <h6 class="card-title text-dark-50 mb-2">Активных планов</h6>
+                        <h2 class="mb-0 fw-bold">{{ total_plans }}</h2>
+                        <small class="text-dark-50">всего планов продаж</small>
+                    </div>
+                    <i class="bi bi-people fs-1 text-dark-50"></i>
+                </div>
             </div>
         </div>
     </div>
@@ -46,7 +71,7 @@
 
 <!-- График продаж по дням -->
 <div class="card shadow mb-4">
-    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+    <div class="card-header bg-primary text-white">
         <h5 class="mb-0"><i class="bi bi-bar-chart"></i> Продажи по дням (текущий месяц)</h5>
     </div>
     <div class="card-body">
@@ -65,19 +90,30 @@
 <!-- Топ товаров и планы продаж -->
 <div class="row">
     <!-- Топ товаров -->
+<!-- Топ товаров -->
     <div class="col-md-5 mb-4">
         <div class="card shadow h-100">
             <div class="card-header bg-success text-white">
-                <h5 class="mb-0"><i class="bi bi-trophy"></i> Топ-3 товаров месяца</h5>
+                <h5 class="mb-0"><i class="bi bi-trophy"></i> Топ-5 товаров месяца</h5>
             </div>
             <div class="card-body">
                 {% if top_products %}
-                <div class="list-group">
+                <div class="list-group list-group-flush">
                     {% for product in top_products %}
-                    <div class="list-group-item d-flex justify-content-between align-items-center">
-                        <div>
-                            <strong>{{ forloop.counter }}.</strong> {{ product.product__name|default:"Товар" }}
-                            <span class="badge bg-secondary ms-2">{{ product.quantity }} шт</span>
+                    <div class="list-group-item d-flex justify-content-between align-items-center px-0">
+                        <div class="d-flex align-items-center">
+                            <span class="badge bg-secondary rounded-circle me-3" style="width: 28px; height: 28px; line-height: 28px;">{{ forloop.counter }}</span>
+                            <div>
+                                <strong>{{ product.product__name|default:"Товар" }}</strong>
+                                <div class="small text-muted">
+                                    <i class="bi bi-{% if product.product__unit == 'kg' %}scale{% else %}box{% endif %}"></i>
+                                    {% if product.product__unit == 'kg' %}
+                                        {{ product.quantity|floatformat:3 }} кг
+                                    {% else %}
+                                        {{ product.quantity|floatformat:0 }} шт
+                                    {% endif %}
+                                </div>
+                            </div>
                         </div>
                         <span class="text-success fw-bold">{{ product.total|floatformat:0 }} ₽</span>
                     </div>
@@ -100,30 +136,34 @@
                 <h5 class="mb-0"><i class="bi bi-people"></i> Статистика выполнения планов</h5>
             </div>
             <div class="card-body">
-                <div class="row text-center mb-3">
+                <div class="row text-center">
                     <div class="col-4">
-                        <div class="p-3 bg-light rounded">
-                            <h3 class="mb-0">{{ total_plans }}</h3>
+                        <div class="bg-light rounded p-3">
+                            <h3 class="mb-0 text-primary">{{ total_plans }}</h3>
                             <small class="text-muted">всего планов</small>
                         </div>
                     </div>
                     <div class="col-4">
-                        <div class="p-3 bg-light rounded">
-                            <h3 class="mb-0">{{ half_completed }}</h3>
+                        <div class="bg-light rounded p-3">
+                            <h3 class="mb-0 text-warning">{{ half_completed }}</h3>
                             <small class="text-muted">выполнено >50%</small>
                         </div>
                     </div>
                     <div class="col-4">
-                        <div class="p-3 bg-light rounded">
-                            <h3 class="mb-0">{{ over_completed }}</h3>
+                        <div class="bg-light rounded p-3">
+                            <h3 class="mb-0 text-success">{{ over_completed }}</h3>
                             <small class="text-muted">перевыполнено</small>
                         </div>
                     </div>
                 </div>
                 
-                <a href="#plans-table" class="btn btn-outline-primary w-100" data-bs-toggle="collapse">
-                    <i class="bi bi-table"></i> Показать все планы
-                </a>
+                <hr>
+                
+                <div class="text-center">
+                    <a href="#plans-table" class="btn btn-outline-primary" data-bs-toggle="collapse">
+                        <i class="bi bi-table"></i> Показать все планы
+                    </a>
+                </div>
             </div>
         </div>
     </div>
@@ -182,12 +222,14 @@
                             <br><small class="text-muted">{{ plan.updated_by.username|default:"—" }}</small>
                         </td>
                         <td>
-                            <a href="{% url 'plan_edit' plan.user.id %}" class="btn btn-sm btn-primary">
-                                <i class="bi bi-pencil"></i>
-                            </a>
-                            <a href="{% url 'user_sales_detail' plan.user.id %}" class="btn btn-sm btn-info">
-                                <i class="bi bi-eye"></i>
-                            </a>
+                            <div class="btn-group btn-group-sm">
+                                <a href="{% url 'plan_edit' plan.user.id %}" class="btn btn-primary" title="Редактировать">
+                                    <i class="bi bi-pencil"></i>
+                                </a>
+                                <a href="{% url 'user_sales_detail' plan.user.id %}" class="btn btn-info" title="Детали">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+                            </div>
                         </td>
                     </tr>
                     {% empty %}
@@ -212,15 +254,10 @@ document.addEventListener('DOMContentLoaded', function() {
     {% if has_sales %}
     // График продаж
     var ctx = document.getElementById('salesChart').getContext('2d');
-    
-    // Данные из Django
     var labels = {{ labels|safe }};
     var values = {{ daily_data|safe }};
     
-    // Находим максимальное значение для масштабирования
     var maxValue = Math.max(...values, 1);
-    
-    // Определяем шаг шкалы в зависимости от максимального значения
     var stepSize;
     if (maxValue <= 1000) stepSize = 100;
     else if (maxValue <= 5000) stepSize = 500;

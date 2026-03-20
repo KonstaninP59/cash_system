@@ -19,6 +19,13 @@
                         <div class="col-md-6 mb-3">
                             <label for="{{ field.id_for_label }}" class="form-label">{{ field.label }}</label>
                             {{ field }}
+                            {% if field.name == 'quantity' %}
+                                {% if product and product.unit == 'kg' %}
+                                    <small class="text-muted d-block mt-1">Можно указывать дробное количество (до 3 знаков, например: 1.5, 0.75)</small>
+                                {% elif not product %}
+                                    <small class="text-muted d-block mt-1">Для товаров в кг можно указывать дробное количество (например: 1.5, 0.75)</small>
+                                {% endif %}
+                            {% endif %}
                             {% if field.errors %}
                                 <div class="text-danger small">{{ field.errors }}</div>
                             {% endif %}
@@ -27,6 +34,12 @@
                             {% endif %}
                         </div>
                         {% endfor %}
+                    </div>
+                    
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle"></i>
+                        <strong>Информация:</strong> Для товаров в килограммах количество можно указывать с точностью до 0,001 кг.
+                        Для штучных товаров количество указывается целыми числами.
                     </div>
                     
                     <div class="d-flex justify-content-between mt-3">
@@ -42,4 +55,29 @@
         </div>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Обработчик изменения единицы измерения
+    var unitSelect = document.querySelector('#id_unit');
+    var quantityField = document.querySelector('#id_quantity');
+    
+    if (unitSelect && quantityField) {
+        function updateQuantityStep() {
+            if (unitSelect.value === 'kg') {
+                quantityField.step = '0.001';
+                quantityField.min = '0';
+                quantityField.placeholder = 'Например: 1.5, 0.75';
+            } else {
+                quantityField.step = '1';
+                quantityField.min = '0';
+                quantityField.placeholder = 'Целое число';
+            }
+        }
+        
+        unitSelect.addEventListener('change', updateQuantityStep);
+        updateQuantityStep();
+    }
+});
+</script>
 {% endblock %}

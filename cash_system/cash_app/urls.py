@@ -13,10 +13,7 @@ urlpatterns = [
     path('products/<int:pk>/delete/', views.product_delete, name='product_delete'),
     path('products/<int:pk>/disposal/', views.product_disposal, name='product_disposal'),
     
-    # Штрих-код
-    path('barcode/', views.barcode_add, name='barcode_add'),
-    
-    # QR-коды
+    # QR-коды (вместо штрих-кодов)
     path('scan-qr/', views.scan_qr, name='scan_qr'),
     path('scan-qr/result/', views.scan_qr_result, name='scan_qr_result'),
     path('scan-qr/upload/', views.scan_qr_upload, name='scan_qr_upload'),

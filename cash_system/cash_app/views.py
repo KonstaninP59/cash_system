@@ -22,6 +22,7 @@ import qrcode
 import uuid
 from django.core.files.base import ContentFile
 from django.views.decorators.csrf import csrf_exempt
+from decimal import Decimal
 import json
 import calendar
 
@@ -59,52 +60,46 @@ def index(request):
 @login_required
 def product_list(request):
     """Список товаров с фильтрацией по статусу и поиском"""
-    # Получаем параметры из URL
     filter_type = request.GET.get('filter', 'all')
     search_query = request.GET.get('search', '').strip()
     
-    # Получаем все товары
-    all_products = Product.objects.all()
-    products_list = list(all_products)
+    products = Product.objects.all()
     
-    # Применяем поиск по названию или штрих-коду (регистронезависимый)
+    # Применяем поиск по названию (регистронезависимый)
     if search_query:
-        # Приводим поисковый запрос к нижнему регистру
         search_query_lower = search_query.lower()
-        
+        all_products = list(products)
         filtered_products = []
-        for product in products_list:
-            # Приводим название и штрих-код к нижнему регистру
+        
+        for product in all_products:
             name_lower = product.name.lower() if product.name else ''
-            barcode_lower = product.barcode.lower() if product.barcode else ''
-            
-            # Проверяем вхождение
-            if search_query_lower in name_lower or search_query_lower in barcode_lower:
+            if search_query_lower in name_lower:
                 filtered_products.append(product)
         
-        products_list = filtered_products
+        products = filtered_products
         search_title = f'Результаты поиска: "{search_query}"'
     else:
         search_title = None
+        products = list(products)
     
     # Применяем фильтр по статусу
     if filter_type == 'expired':
-        products_list = [p for p in products_list if p.is_expired()]
+        products = [p for p in products if p.is_expired()]
         filter_title = "Просроченные товары"
     elif filter_type == 'expiring_soon':
-        products_list = [p for p in products_list if p.is_expiring_soon()]
+        products = [p for p in products if p.is_expiring_soon()]
         filter_title = "Товары с истекающим сроком годности"
     else:
         filter_type = 'all'
         filter_title = "Все товары"
     
-    # Подсчет статистики
+    all_products = Product.objects.all()
     total_products = all_products.count()
     expired_count = sum(1 for p in all_products if p.is_expired())
     expiring_soon_count = sum(1 for p in all_products if p.is_expiring_soon())
     
     context = {
-        'products': products_list,
+        'products': products,
         'total_products': total_products,
         'expired_count': expired_count,
         'expiring_soon_count': expiring_soon_count,
@@ -124,7 +119,6 @@ def product_create(request):
         if form.is_valid():
             product = form.save()
             
-            # Создаем запись в истории о поступлении
             if product.quantity > 0:
                 History.objects.create(
                     type='receipt',
@@ -133,19 +127,17 @@ def product_create(request):
                     user=request.user
                 )
             
-            messages.success(request, 'Товар успешно добавлен!')
+            # Генерируем QR-код
+            product.generate_qr_code()
+            product.save()
+            
+            messages.success(request, 'Товар успешно добавлен! QR-код сгенерирован')
             return redirect('product_list')
     else:
-        # Проверяем, есть ли временный штрих-код из формы добавления по штрих-коду
-        temp_barcode = request.session.get('temp_barcode')
-        if temp_barcode:
-            form = ProductForm(initial={'barcode': temp_barcode})
-            # Очищаем временный штрих-код из сессии
-            del request.session['temp_barcode']
-        else:
-            form = ProductForm()
+        form = ProductForm()
     
     return render(request, 'cash_app/product_form.html', {'form': form, 'title': 'Добавление товара'})
+
 
 @login_required
 def product_update(request, pk):
@@ -255,29 +247,87 @@ def product_disposal(request, pk):
     }
     return render(request, 'cash_app/product_disposal.html', context)
 
+
 @login_required
 def history_list(request):
-    """История движений товаров"""
+    """История движений товаров с группировкой продаж"""
+    
+    # Получаем параметры фильтрации
+    type_filter = request.GET.get('type')
+    product_filter = request.GET.get('product')
+    
+    # Базовый запрос
     history = History.objects.all().select_related('product', 'user', 'coupon')
     
-    # Фильтрация по типу
-    type_filter = request.GET.get('type')
+    # Фильтрация по типу (для продаж используем группировку)
     if type_filter and type_filter in dict(History.TYPE_CHOICES).keys():
-        history = history.filter(type=type_filter)
+        if type_filter == 'sale':
+            # Для продаж - группируем по sale_group
+            pass
+        else:
+            history = history.filter(type=type_filter)
+    else:
+        # Если не выбрана продажа, показываем все, кроме продаж (они будут сгруппированы отдельно)
+        pass
     
-    # Фильтрация по товару
-    product_filter = request.GET.get('product')
-    if product_filter:
+    # Фильтрация по товару (только для не-продаж)
+    if product_filter and type_filter != 'sale':
         history = history.filter(product_id=product_filter)
     
+    # Получаем все записи о продажах и группируем их
+    sales = history.filter(type='sale').order_by('-date')
+    grouped_sales = {}
+    
+    for sale in sales:
+        if sale.sale_group:
+            if sale.sale_group not in grouped_sales:
+                grouped_sales[sale.sale_group] = {
+                    'items': [],
+                    'date': sale.date,
+                    'user': sale.user,
+                    'total': 0,
+                    'coupon': sale.coupon,
+                    'sale_group': sale.sale_group
+                }
+            grouped_sales[sale.sale_group]['items'].append(sale)
+            grouped_sales[sale.sale_group]['total'] += float(sale.total_price or 0)
+    
+    # Преобразуем grouped_sales в список для шаблона
+    grouped_sales_list = []
+    for group_id, group_data in grouped_sales.items():
+        grouped_sales_list.append({
+            'type': 'sale_group',
+            'sale_group': group_data['sale_group'],
+            'date': group_data['date'],
+            'user': group_data['user'],
+            'total': round(group_data['total'], 2),
+            'coupon': group_data['coupon'],
+            'items': group_data['items']
+        })
+    
+    # Сортируем по дате (новые сверху)
+    grouped_sales_list.sort(key=lambda x: x['date'], reverse=True)
+    
+    # Получаем остальные записи (не продажи)
+    other_history = history.filter(type__in=['receipt', 'disposal']).order_by('-date')
+    
+    # Объединяем и сортируем
+    all_entries = []
+    all_entries.extend(other_history)
+    all_entries.extend(grouped_sales_list)
+    
+    # Сортируем все записи по дате
+    all_entries.sort(key=lambda x: x.date if hasattr(x, 'date') else x['date'], reverse=True)
+    
     context = {
-        'history': history,
+        'entries': all_entries,
         'type_choices': History.TYPE_CHOICES,
         'products': Product.objects.all(),
         'current_type': type_filter,
         'current_product': product_filter,
     }
     return render(request, 'cash_app/history_list.html', context)
+
 
 @login_required
 def sale_view(request):
@@ -312,29 +362,38 @@ def sale_view(request):
                 sale_items = []
                 total_without_discount = 0
                 
+                # Генерируем уникальный идентификатор для группы продажи
+                sale_group_id = uuid.uuid4()
+                
                 for product_id, item in cart.items():
                     product = Product.objects.select_for_update().get(pk=product_id)
-                    quantity = item['quantity']
+                    quantity = Decimal(str(item['quantity']))  # <--- Используем Decimal
                     
-                    if product.quantity < quantity:
+                    if product.unit == 'kg' and quantity < Decimal('0.001'):
+                        raise ValueError(f'Минимальное количество для товара "{product.name}" - 0,001 кг')
+                    
+                    if float(product.quantity) < float(quantity):
                         raise ValueError(f'Недостаточно товара "{product.name}" на складе')
+                    
+                    if product.expiration_date < date.today():
+                        raise ValueError(f'Товар "{product.name}" просрочен и не может быть продан')
                     
                     # Уменьшаем количество
                     product.quantity -= quantity
                     product.save()
                     
                     # Считаем сумму
-                    item_price = float(product.price)
+                    item_price = product.price
                     item_total_without_discount = item_price * quantity
-                    total_without_discount += item_total_without_discount
+                    total_without_discount += float(item_total_without_discount)
                     
                     # Применяем скидку и округляем до 2 знаков
-                    item_total_with_discount = round(item_total_without_discount * discount_factor, 2)
+                    item_total_with_discount = round(float(item_total_without_discount) * discount_factor, 2)
                     
                     sale_items.append({
                         'product': product,
-                        'quantity': quantity,
-                        'price': round(item_price, 2),
+                        'quantity': float(quantity),
+                        'price': float(item_price),
                         'total': item_total_with_discount,
                         'unit': product.get_unit_display()
                     })
@@ -344,15 +403,16 @@ def sale_view(request):
                 total_with_discount = round(total_without_discount * discount_factor, 2) if discount_factor != 1.0 else total_without_discount
                 discount_amount = round(total_without_discount - total_with_discount, 2) if coupon else 0
                 
-                # Создаем записи в истории
+                # Создаем записи в истории с группировкой
                 for item in sale_items:
                     History.objects.create(
                         type='sale',
                         product=item['product'],
-                        quantity=item['quantity'],
-                        total_price=item['total'],  # Уже округлено
+                        quantity=Decimal(str(item['quantity'])),  # <--- Используем Decimal
+                        total_price=Decimal(str(item['total'])),  # <--- Используем Decimal
                         user=request.user,
-                        coupon=coupon
+                        coupon=coupon,
+                        sale_group=sale_group_id
                     )
                 
                 # Увеличиваем счетчик использований купона
@@ -360,7 +420,7 @@ def sale_view(request):
                     coupon.used_count += 1
                     coupon.save()
                 
-                # Сохраняем данные чека в сессию для PDF (все суммы округлены)
+                # Сохраняем данные чека в сессию для PDF
                 request.session['last_receipt'] = {
                     'items': [
                         {
@@ -376,7 +436,8 @@ def sale_view(request):
                     'total': total_with_discount,
                     'coupon_code': coupon.code if coupon else None,
                     'date': timezone.now().strftime('%d.%m.%Y %H:%M'),
-                    'cashier': request.user.username
+                    'cashier': request.user.username,
+                    'sale_group': str(sale_group_id)
                 }
                 
                 # Очищаем корзину и купон
@@ -387,7 +448,6 @@ def sale_view(request):
                 
                 messages.success(request, 'Продажа успешно оформлена!')
                 
-                # Перенаправляем на страницу с чеком
                 return redirect('receipt_view')
                 
         except Exception as e:
@@ -402,7 +462,7 @@ def sale_view(request):
         expiration_date__gte=date.today()
     ).select_related('category').order_by('category__name', 'name')
     
-    # Получаем все категории (даже пустые) для отображения в управлении
+    # Получаем все категории
     all_categories = Category.objects.all().order_by('name')
     
     # Группируем товары по категориям
@@ -485,11 +545,17 @@ def add_to_cart(request):
     """Добавление товара в корзину"""
     if request.method == 'POST':
         product_id = request.POST.get('product_id')
-        quantity = int(request.POST.get('quantity', 1))
+        quantity = float(request.POST.get('quantity', 1))
         
         product = get_object_or_404(Product, pk=product_id)
         
-        if product.quantity < quantity:
+        # Проверка минимального количества для кг
+        if product.unit == 'kg' and quantity < 0.001:
+            messages.error(request, f'Минимальное количество для товара "{product.name}" - 0,001 кг')
+            return redirect('sale')
+        
+        # Проверка наличия
+        if float(product.quantity) < quantity:
             messages.error(request, f'Недостаточно товара "{product.name}" на складе')
             return redirect('sale')
         
@@ -504,15 +570,17 @@ def add_to_cart(request):
         else:
             cart[product_id] = {
                 'quantity': quantity,
-                'price': str(product.price)
+                'price': str(product.price),
+                'unit': product.unit
             }
         
         request.session['cart'] = cart
         request.session.modified = True
         
-        messages.success(request, f'Товар "{product.name}" добавлен в корзину')
+        messages.success(request, f'Товар "{product.name}" добавлен в корзину ({quantity} {product.get_unit_display()})')
     
     return redirect('sale')
+
 
 @login_required
 def remove_from_cart(request, product_id):
@@ -537,55 +605,6 @@ def clear_cart(request):
     messages.success(request, 'Корзина очищена')
     return redirect('sale')
 
-@login_required
-def barcode_add(request):
-    """Добавление товара по штрих-коду"""
-    if request.method == 'POST':
-        form = BarcodeForm(request.POST)
-        if form.is_valid():
-            barcode = form.cleaned_data['barcode']
-            quantity = form.cleaned_data['quantity']
-            
-            try:
-                # Ищем товар по штрих-коду
-                product = Product.objects.get(barcode=barcode)
-                
-                # Проверяем наличие
-                if product.quantity < quantity:
-                    messages.error(request, f'Недостаточно товара "{product.name}" на складе')
-                    return redirect('barcode_add')
-                
-                if product.expiration_date < date.today():
-                    messages.error(request, f'Товар "{product.name}" просрочен')
-                    return redirect('barcode_add')
-                
-                # Добавляем в корзину
-                cart = request.session.get('cart', {})
-                product_id = str(product.id)
-                
-                if product_id in cart:
-                    cart[product_id]['quantity'] += quantity
-                else:
-                    cart[product_id] = {
-                        'quantity': quantity,
-                        'price': str(product.price)
-                    }
-                
-                request.session['cart'] = cart
-                request.session.modified = True
-                
-                messages.success(request, f'Товар "{product.name}" добавлен в корзину')
-                return redirect('sale')
-                
-            except Product.DoesNotExist:
-                # Если товар не найден, предлагаем создать
-                request.session['temp_barcode'] = barcode
-                messages.warning(request, f'Товар со штрих-кодом {barcode} не найден. Создайте новый товар.')
-                return redirect('product_create')
-    else:
-        form = BarcodeForm()
-    
-    return render(request, 'cash_app/barcode.html', {'form': form})
 
 @login_required
 def receipt_view(request):
@@ -711,6 +730,16 @@ def dashboard_view(request):
         )
         monthly_sales = sum(float(s.total_price or 0) for s in user_sales)
         
+        # Количество продаж (уникальных групп продаж)
+        # Считаем количество уникальных sale_group
+        unique_sales = user_sales.values('sale_group').distinct().count()
+        
+        # Средний чек - сумма всех продаж / количество чеков
+        if unique_sales > 0:
+            average_check = monthly_sales / unique_sales
+        else:
+            average_check = 0
+        
         # Продажи за сегодня
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         today_sales = History.objects.filter(
@@ -729,23 +758,25 @@ def dashboard_view(request):
         )
         week_total = sum(float(s.total_price or 0) for s in week_sales)
         
-        # Статистика по дням для графика - только дни с продажами
-        sales_by_day = {}
-        for sale in user_sales:
-            day = sale.date.day
-            if day not in sales_by_day:
-                sales_by_day[day] = 0
-            sales_by_day[day] += float(sale.total_price or 0)
-        
-        # Сортируем по дням и создаем данные для графика
+        # Статистика по дням для графика
         days_in_month = calendar.monthrange(now.year, now.month)[1]
         daily_data = []
         labels = []
         
         for day in range(1, days_in_month + 1):
-            amount = sales_by_day.get(day, 0)
-            daily_data.append(round(amount, 2))
-            labels.append(str(day))
+            day_date = datetime(now.year, now.month, day).date()
+            day_start = timezone.make_aware(datetime.combine(day_date, datetime.min.time()))
+            day_end = timezone.make_aware(datetime.combine(day_date, datetime.max.time()))
+            
+            day_sales = History.objects.filter(
+                type='sale',
+                user=request.user,
+                date__range=[day_start, day_end]
+            )
+            day_total = sum(float(s.total_price or 0) for s in day_sales)
+            
+            daily_data.append(day_total)
+            labels.append(day)
         
         context = {
             'plan': plan,
@@ -755,6 +786,8 @@ def dashboard_view(request):
             'daily_average': plan.get_daily_average(),
             'today_total': today_total,
             'week_total': week_total,
+            'average_check': average_check,  # Добавляем правильный средний чек
+            'sales_count': unique_sales,    # Количество чеков
             'daily_data': json.dumps(daily_data),
             'labels': json.dumps(labels),
             'has_sales': any(d > 0 for d in daily_data),
@@ -777,73 +810,91 @@ def dashboard_view(request):
             date__gte=start_of_year
         ).aggregate(total=Sum('total_price'))['total'] or 0
         
-        # Количество продаж
+        # Количество уникальных продаж (чеков) за месяц
         sales_count = History.objects.filter(
             type='sale',
             date__gte=start_of_month
-        ).count()
+        ).values('sale_group').distinct().count()
+        
+        # Средний чек - сумма всех продаж / количество чеков
+        if sales_count > 0:
+            average_check = float(total_monthly_sales) / sales_count
+        else:
+            average_check = 0
         
         # Статистика по планам
         users_with_plans = SalesPlan.objects.all().select_related('user', 'updated_by')
-
+        
         # Подсчет статистики выполнения
         total_plans = users_with_plans.count()
         half_completed = 0
         over_completed = 0
         
-        for plan in users_with_plans:
-            percentage = plan.get_completion_percentage()
+        for p in users_with_plans:
+            percentage = p.get_completion_percentage()
             if percentage >= 100:
                 over_completed += 1
                 half_completed += 1
             elif percentage >= 50:
                 half_completed += 1
         
-        # Продажи по дням для графика - агрегированные данные
-        month_sales = History.objects.filter(
-            type='sale',
-            date__gte=start_of_month
-        ).select_related('product')
-        
-        sales_by_day = {}
-        for sale in month_sales:
-            day = sale.date.day
-            if day not in sales_by_day:
-                sales_by_day[day] = 0
-            sales_by_day[day] += float(sale.total_price or 0)
-        
+        # Продажи по дням для графика
         days_in_month = calendar.monthrange(now.year, now.month)[1]
         daily_data = []
         labels = []
         
         for day in range(1, days_in_month + 1):
-            amount = sales_by_day.get(day, 0)
-            daily_data.append(round(amount, 2))
-            labels.append(str(day))
+            day_date = datetime(now.year, now.month, day).date()
+            day_start = timezone.make_aware(datetime.combine(day_date, datetime.min.time()))
+            day_end = timezone.make_aware(datetime.combine(day_date, datetime.max.time()))
+            
+            day_sales = History.objects.filter(
+                type='sale',
+                date__range=[day_start, day_end]
+            )
+            day_total = sum(float(s.total_price or 0) for s in day_sales)
+            
+            daily_data.append(day_total)
+            labels.append(day)
         
-        # Топ-3 товаров за месяц
+        # В функции dashboard_view для администратора, в части top_products:
+
+        # Топ-3 товара за месяц с единицами измерения
         top_products = History.objects.filter(
             type='sale',
             date__gte=start_of_month
-        ).values('product__name').annotate(
+        ).values(
+            'product__name', 
+            'product__unit'  # Добавляем единицу измерения
+        ).annotate(
             total=Sum('total_price'),
             quantity=Sum('quantity')
         ).order_by('-total')[:5]
+
+        # Преобразуем в список для удобства
+        top_products_list = []
+        for p in top_products:
+            top_products_list.append({
+                'product__name': p['product__name'],
+                'product__unit': p['product__unit'],
+                'total': p['total'],
+                'quantity': p['quantity']
+            })
         
         context = {
-        'total_monthly_sales': total_monthly_sales,
-        'total_yearly_sales': total_yearly_sales,
-        'sales_count': sales_count,
-        'average_check': total_monthly_sales / sales_count if sales_count > 0 else 0,
-        'users_with_plans': users_with_plans,
-        'total_plans': total_plans,
-        'half_completed': half_completed,
-        'over_completed': over_completed,
-        'daily_data': json.dumps(daily_data),
-        'labels': json.dumps(labels),
-        'top_products': top_products,
-        'has_sales': any(d > 0 for d in daily_data),
-        'is_admin': True,
+            'total_monthly_sales': float(total_monthly_sales),
+            'total_yearly_sales': float(total_yearly_sales),
+            'sales_count': sales_count,
+            'average_check': average_check,
+            'users_with_plans': users_with_plans,
+            'total_plans': total_plans,
+            'half_completed': half_completed,
+            'over_completed': over_completed,
+            'daily_data': json.dumps(daily_data),
+            'labels': json.dumps(labels),
+            'top_products': top_products,
+            'has_sales': any(d > 0 for d in daily_data),
+            'is_admin': True,
         }
         
         return render(request, 'cash_app/dashboard_admin.html', context)
@@ -1081,6 +1132,24 @@ def save_collapsed_categories(request):
 def scan_qr(request):
     """Страница сканирования QR-кода"""
     action = request.GET.get('action', 'add_to_cart')  # add_to_cart или receipt
+    
+    # Проверяем, есть ли в сессии сохраненный товар (если пришли с результата)
+    scanned_product_id = request.session.get('scanned_product_id')
+    scan_action = request.session.get('scan_action')
+    
+    if scanned_product_id and scan_action:
+        try:
+            product = Product.objects.get(pk=scanned_product_id)
+            # Очищаем сессию
+            del request.session['scanned_product_id']
+            del request.session['scan_action']
+            return render(request, 'cash_app/scan_qr.html', {
+                'scanned_product': product,
+                'scan_action': scan_action
+            })
+        except:
+            pass
+    
     return render(request, 'cash_app/scan_qr.html', {
         'scan_action': action,
         'scanned_product': None
@@ -1091,13 +1160,13 @@ def scan_qr(request):
 def scan_qr_result(request):
     """Обработка результата сканирования QR-кода"""
     qr_data = request.GET.get('data', '')
-    action = request.GET.get('action', 'add_to_cart')
+    action = request.GET.get('action', 'add_to_cart')  # add_to_cart или receipt
     
     if not qr_data:
         messages.error(request, 'Не удалось прочитать QR-код')
         return redirect('scan_qr')
     
-    # Парсим данные из QR-кода (ожидаем формат "product:uuid")
+    # Парсим данные из QR-кода
     try:
         if qr_data.startswith('product:'):
             qr_uuid = qr_data.replace('product:', '')
@@ -1114,7 +1183,7 @@ def scan_qr_result(request):
         else:
             messages.error(request, 'Неверный формат QR-кода')
     except Product.DoesNotExist:
-        messages.error(request, 'Товар не найден')
+        messages.error(request, 'Товар не найден в системе. Возможно, QR-код устарел.')
     except Exception as e:
         messages.error(request, f'Ошибка: {str(e)}')
     
@@ -1155,14 +1224,30 @@ def process_qr_action(request):
     """Обработка действия после сканирования QR-кода"""
     if request.method == 'POST':
         product_id = request.POST.get('product_id')
-        quantity = int(request.POST.get('quantity', 1))
+        quantity_str = request.POST.get('quantity', '1')
         action = request.POST.get('action')
         
         product = get_object_or_404(Product, pk=product_id)
         
+        # Преобразуем количество в float, затем в Decimal для точности
+        try:
+            quantity = Decimal(str(quantity_str).replace(',', '.'))
+        except:
+            messages.error(request, 'Неверный формат количества')
+            return redirect('scan_qr')
+        
+        # Проверка минимального количества для кг
+        if product.unit == 'kg' and quantity < Decimal('0.001'):
+            messages.error(request, f'Минимальное количество для товара "{product.name}" - 0,001 кг')
+            return redirect('scan_qr')
+        
+        if product.unit == 'pcs' and quantity < 1:
+            messages.error(request, f'Минимальное количество для товара "{product.name}" - 1 шт')
+            return redirect('scan_qr')
+        
         if action == 'add_to_cart':
             # Добавление в корзину для продажи
-            if product.quantity < quantity:
+            if float(product.quantity) < float(quantity):
                 messages.error(request, f'Недостаточно товара "{product.name}" на складе')
                 return redirect('sale')
             
@@ -1174,17 +1259,20 @@ def process_qr_action(request):
             product_id_str = str(product.id)
             
             if product_id_str in cart:
-                cart[product_id_str]['quantity'] += quantity
+                cart[product_id_str]['quantity'] += float(quantity)
             else:
                 cart[product_id_str] = {
-                    'quantity': quantity,
-                    'price': str(product.price)
+                    'quantity': float(quantity),
+                    'price': str(product.price),
+                    'unit': product.unit
                 }
             
             request.session['cart'] = cart
             request.session.modified = True
             
-            messages.success(request, f'Товар "{product.name}" добавлен в корзину')
+            # Форматируем количество для отображения
+            qty_display = f"{float(quantity):.3f}" if product.unit == 'kg' else f"{int(quantity)}"
+            messages.success(request, f'Товар "{product.name}" добавлен в корзину ({qty_display} {product.get_unit_display()})')
             return redirect('sale')
             
         elif action == 'receipt':
@@ -1199,7 +1287,8 @@ def process_qr_action(request):
                 user=request.user
             )
             
-            messages.success(request, f'Поступление товара "{product.name}" оформлено. Добавлено {quantity} {product.get_unit_display()}')
+            qty_display = f"{float(quantity):.3f}" if product.unit == 'kg' else f"{int(quantity)}"
+            messages.success(request, f'Поступление товара "{product.name}" оформлено. Добавлено {qty_display} {product.get_unit_display()}')
             return redirect('product_list')
     
     return redirect('scan_qr')

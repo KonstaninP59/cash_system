@@ -21,6 +21,7 @@ class Category(models.Model):
     def __str__(self):
         return self.name
 
+
 class Product(models.Model):
     """Модель товара"""
     UNIT_CHOICES = [
@@ -29,7 +30,6 @@ class Product(models.Model):
     ]
     
     name = models.CharField('Название', max_length=200)
-    barcode = models.CharField('Штрих-код', max_length=50, blank=True, null=True, unique=True)
     qr_code = models.ImageField('QR-код', upload_to='qrcodes/', blank=True, null=True)
     qr_uuid = models.UUIDField('UUID для QR', default=uuid.uuid4, editable=False, unique=True)
     category = models.ForeignKey(
@@ -40,7 +40,7 @@ class Product(models.Model):
         verbose_name='Категория',
         related_name='products'
     )
-    quantity = models.PositiveIntegerField('Количество', default=0)
+    quantity = models.DecimalField('Количество', max_digits=10, decimal_places=3, default=0)  # Изменяем на Decimal
     price = models.DecimalField('Цена', max_digits=10, decimal_places=2)
     unit = models.CharField('Единица измерения', max_length=3, choices=UNIT_CHOICES, default='pcs')
     expiration_date = models.DateField('Срок годности')
@@ -54,19 +54,26 @@ class Product(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.get_unit_display()})"
+    
+
+    class Meta:
+        verbose_name = 'Товар'
+        verbose_name_plural = 'Товары'
+        ordering = ['name']
+
+    def __str__(self):
+        return f"{self.name} ({self.get_unit_display()})"
 
     def save(self, *args, **kwargs):
         # Генерируем QR-код при создании товара
-        if not self.qr_code and self.pk:  # Генерируем только если товар уже сохранен (есть id)
+        if not self.qr_code and self.pk:  # Генерируем только если товар уже сохранен
             self.generate_qr_code()
         super().save(*args, **kwargs)
 
     def generate_qr_code(self):
         """Генерация QR-кода для товара"""
-        # Данные для QR-кода (UUID товара)
         qr_data = f"product:{self.qr_uuid}"
         
-        # Создаем QR-код
         qr = qrcode.QRCode(
             version=1,
             error_correction=qrcode.constants.ERROR_CORRECT_L,
@@ -78,7 +85,6 @@ class Product(models.Model):
         
         img = qr.make_image(fill_color="black", back_color="white")
         
-        # Сохраняем в поле ImageField
         buffer = BytesIO()
         img.save(buffer, format='PNG')
         filename = f'qr_{self.id}_{self.qr_uuid}.png'
@@ -101,10 +107,10 @@ class Product(models.Model):
         return 'good'
 
     def get_qr_url(self):
-        """Получить URL QR-кода"""
         if self.qr_code:
             return self.qr_code.url
         return None
+    
 
 class Coupon(models.Model):
     """Модель купона на скидку"""
@@ -144,6 +150,7 @@ class Coupon(models.Model):
             return total * (100 - self.discount_percent) / 100
         return total
 
+
 class History(models.Model):
     """Модель истории движений товаров"""
     TYPE_CHOICES = [
@@ -154,7 +161,7 @@ class History(models.Model):
 
     type = models.CharField('Тип операции', max_length=20, choices=TYPE_CHOICES)
     product = models.ForeignKey(Product, on_delete=models.CASCADE, verbose_name='Товар')
-    quantity = models.PositiveIntegerField('Количество')
+    quantity = models.DecimalField('Количество', max_digits=10, decimal_places=3)  # Изменяем на Decimal
     total_price = models.DecimalField('Сумма', max_digits=10, decimal_places=2, null=True, blank=True)
     reason = models.CharField('Причина', max_length=200, blank=True, null=True)
     coupon = models.ForeignKey(
@@ -164,6 +171,7 @@ class History(models.Model):
         blank=True,
         verbose_name='Применённый купон'
     )
+    sale_group = models.UUIDField('Группа продажи', null=True, blank=True, editable=False)
     date = models.DateTimeField('Дата операции', auto_now_add=True)
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Пользователь')
 
@@ -174,6 +182,7 @@ class History(models.Model):
 
     def __str__(self):
         return f"{self.get_type_display()} - {self.product.name} - {self.quantity} {self.product.get_unit_display()}"
+    
 
 class SalesPlan(models.Model):
     """Модель плана продаж для пользователей"""

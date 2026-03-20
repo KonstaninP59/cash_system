@@ -50,57 +50,109 @@
                     <tr>
                         <th>Дата и время</th>
                         <th>Тип операции</th>
-                        <th>Товар</th>
+                        <th>Товар(ы)</th>
                         <th>Количество</th>
-                        <th>Ед.</th>
                         <th>Сумма</th>
                         <th>Купон</th>
-                        <th>Причина</th>
                         <th>Пользователь</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {% for record in history %}
-                    <tr>
-                        <td>{{ record.date|date:"d.m.Y H:i" }}</td>
+                    {% for entry in entries %}
+                    <tr class="history-row {% if entry.type == 'sale_group' %}sale-group{% endif %}" 
+                        data-group-id="{{ entry.sale_group|default:'' }}"
+                        style="cursor: pointer;">
+                        <td>{{ entry.date|date:"d.m.Y H:i" }}</td>
                         <td>
-                            {% if record.type == 'receipt' %}
-                                <span class="badge bg-success">Поступление</span>
-                            {% elif record.type == 'disposal' %}
-                                <span class="badge bg-warning text-dark">Утилизация</span>
-                            {% elif record.type == 'sale' %}
+                            {% if entry.type == 'sale_group' or entry.type == 'sale' %}
                                 <span class="badge bg-info">Продажа</span>
+                            {% elif entry.type == 'receipt' %}
+                                <span class="badge bg-success">Поступление</span>
+                            {% elif entry.type == 'disposal' %}
+                                <span class="badge bg-warning text-dark">Утилизация</span>
                             {% endif %}
                         </td>
-                        <td>{{ record.product.name }}</td>
-                        <td>{{ record.quantity }}</td>
-                        <td>{{ record.product.get_unit_display }}</td>
                         <td>
-                            {% if record.total_price %}
-                                {{ record.total_price|floatformat:2 }} ₽
+                            {% if entry.type == 'sale_group' %}
+                                <strong>{{ entry.items|length }} товара(ов)</strong>
+                                <i class="bi bi-chevron-down ms-2 toggle-icon"></i>
+                            {% else %}
+                                {{ entry.product.name }}
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if entry.type == 'sale_group' %}
+                                {{ entry.items|length }} наименований
+                            {% else %}
+                                {{ entry.quantity }} {{ entry.product.get_unit_display }}
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if entry.type == 'sale_group' %}
+                                <strong>{{ entry.total|floatformat:2 }} ₽</strong>
+                            {% else %}
+                                {% if entry.total_price %}
+                                    {{ entry.total_price|floatformat:2 }} ₽
+                                {% else %}
+                                    —
+                                {% endif %}
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if entry.coupon %}
+                                <span class="badge bg-secondary">{{ entry.coupon.code }}</span>
                             {% else %}
                                 —
                             {% endif %}
                         </td>
-                        <td>
-                            {% if record.coupon %}
-                                <span class="badge bg-secondary">{{ record.coupon.code }}</span>
-                            {% else %}
-                                —
-                            {% endif %}
-                        </td>
-                        <td>
-                            {% if record.reason %}
-                                {{ record.reason }}
-                            {% else %}
-                                —
-                            {% endif %}
-                        </td>
-                        <td>{{ record.user.username|default:"-" }}</td>
+                        <td>{{ entry.user.username|default:"—" }}</td>
                     </tr>
+                    
+                    <!-- Детали продажи (скрыты по умолчанию) -->
+                    {% if entry.type == 'sale_group' %}
+                    <tr class="sale-details" id="details-{{ entry.sale_group }}" style="display: none;">
+                        <td colspan="7" class="bg-light">
+                            <div class="p-3">
+                                <h6><i class="bi bi-receipt"></i> Детали продажи:</h6>
+                                <table class="table table-sm mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Товар</th>
+                                            <th>Количество</th>
+                                            <th>Цена за ед.</th>
+                                            <th>Сумма</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for item in entry.items %}
+                                        <tr>
+                                            <td>{{ item.product.name }}</td>
+                                            <td>{{ item.quantity }} {{ item.product.get_unit_display }}</td>
+                                            <td>{{ item.product.price|floatformat:2 }} ₽</td>
+                                            <td>{{ item.total_price|floatformat:2 }} ₽</td>
+                                        </tr>
+                                        {% endfor %}
+                                        {% if entry.coupon %}
+                                        <tr class="table-warning">
+                                            <td colspan="3" class="text-end"><strong>Скидка по купону {{ entry.coupon.code }}:</strong></td>
+                                            <td><strong class="text-success">-{{ entry.coupon.discount_percent }}%</strong></td>
+                                        </tr>
+                                        {% endif %}
+                                    </tbody>
+                                    <tfoot class="table-light">
+                                        <tr>
+                                            <th colspan="3" class="text-end">ИТОГО:</th>
+                                            <th>{{ entry.total|floatformat:2 }} ₽</th>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endif %}
                     {% empty %}
                     <tr>
-                        <td colspan="9" class="text-center py-4">
+                        <td colspan="7" class="text-center py-4">
                             <i class="bi bi-clock-history fs-1 d-block text-muted"></i>
                             <p class="text-muted">История операций пуста</p>
                         </td>
@@ -111,4 +163,52 @@
         </div>
     </div>
 </div>
+
+<style>
+.sale-group {
+    transition: background-color 0.2s;
+}
+.sale-group:hover {
+    background-color: rgba(13, 110, 253, 0.05);
+}
+.sale-details {
+    background-color: #f8f9fa;
+}
+.sale-details td {
+    padding: 0 !important;
+}
+.toggle-icon {
+    font-size: 0.8rem;
+    margin-left: 5px;
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Обработчик клика по строке продажи
+    document.querySelectorAll('.history-row.sale-group').forEach(function(row) {
+        row.addEventListener('click', function() {
+            var groupId = this.getAttribute('data-group-id');
+            var detailsRow = document.getElementById('details-' + groupId);
+            var icon = this.querySelector('.toggle-icon');
+            
+            if (detailsRow) {
+                if (detailsRow.style.display === 'none' || detailsRow.style.display === '') {
+                    detailsRow.style.display = 'table-row';
+                    if (icon) {
+                        icon.classList.remove('bi-chevron-down');
+                        icon.classList.add('bi-chevron-up');
+                    }
+                } else {
+                    detailsRow.style.display = 'none';
+                    if (icon) {
+                        icon.classList.remove('bi-chevron-up');
+                        icon.classList.add('bi-chevron-down');
+                    }
+                }
+            }
+        });
+    });
+});
+</script>
 {% endblock %}

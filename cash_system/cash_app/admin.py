@@ -11,7 +11,7 @@ class CategoryAdmin(admin.ModelAdmin):
 class ProductAdmin(admin.ModelAdmin):
     list_display = ['name', 'category', 'quantity', 'price', 'unit', 'expiration_date', 'get_status', 'has_qr']
     list_filter = ['category', 'expiration_date', 'unit']
-    search_fields = ['name', 'barcode']
+    search_fields = ['name']
     readonly_fields = ['qr_uuid', 'qr_code_preview']
     
     def get_status(self, obj):
@@ -32,12 +32,22 @@ class ProductAdmin(admin.ModelAdmin):
             return format_html('<img src="{}" style="max-height: 100px;" />', obj.qr_code.url)
         return "Нет QR-кода"
     qr_code_preview.short_description = 'Превью QR-кода'
+    
+    def save_model(self, request, obj, form, change):
+        if not obj.qr_code and obj.pk:
+            obj.generate_qr_code()
+        super().save_model(request, obj, form, change)
 
 class CouponAdmin(admin.ModelAdmin):
     list_display = ['code', 'discount_percent', 'is_active', 'valid_from', 'valid_until', 'used_count', 'max_uses']
     list_filter = ['is_active', 'created_at']
     search_fields = ['code']
     readonly_fields = ['used_count', 'created_at', 'updated_at', 'created_by']
+    
+    def save_model(self, request, obj, form, change):
+        if not obj.pk:
+            obj.created_by = request.user
+        super().save_model(request, obj, form, change)
 
 class HistoryAdmin(admin.ModelAdmin):
     list_display = ['type', 'product', 'quantity', 'total_price', 'coupon', 'date', 'user']
@@ -72,8 +82,9 @@ class SalesPlanAdmin(admin.ModelAdmin):
         super().save_model(request, obj, form, change)
 
 class CustomUserAdmin(UserAdmin):
-    list_display = ['username', 'email', 'first_name', 'last_name', 'is_staff', 'date_joined']
+    list_display = ['username', 'email', 'first_name', 'last_name', 'is_staff', 'is_active', 'date_joined']
     list_filter = ['is_staff', 'is_superuser', 'is_active']
+    search_fields = ['username', 'email', 'first_name', 'last_name']
     
     def get_plan(self, obj):
         try:

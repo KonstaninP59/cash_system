@@ -7,8 +7,8 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h1><i class="bi bi-box"></i> Управление складом</h1>
     <div>
-        <a href="{% url 'barcode_add' %}" class="btn btn-info me-2">
-            <i class="bi bi-upc-scan"></i> Товар по штрих-коду
+        <a href="{% url 'scan_qr' %}?action=receipt" class="btn btn-info me-2">
+            <i class="bi bi-qr-code-scan"></i> Добавить по QR-коду
         </a>
         <a href="{% url 'product_create' %}" class="btn btn-success">
             <i class="bi bi-plus-lg"></i> Добавить товар
@@ -50,7 +50,7 @@
     </div>
 </div>
 
-<!-- Поиск и фильтры -->
+<!-- Поиск -->
 <div class="row mb-4">
     <div class="col-md-8">
         <form method="get" class="d-flex gap-2">
@@ -58,7 +58,7 @@
                 <div class="input-group">
                     <span class="input-group-text"><i class="bi bi-search"></i></span>
                     <input type="text" name="search" class="form-control" 
-                           placeholder="Поиск по названию или штрих-коду..." 
+                           placeholder="Поиск по названию..." 
                            value="{{ search_query }}"
                            autocomplete="off">
                     <input type="hidden" name="filter" value="{{ current_filter }}">
@@ -69,10 +69,6 @@
                     </button>
                     {% endif %}
                 </div>
-                <small class="text-muted">
-                    <i class="bi bi-info-circle"></i> 
-                    Можно искать по части названия: "бан" найдет "Банан"
-                </small>
             </div>
             <button type="submit" class="btn btn-primary">Найти</button>
             {% if search_query %}
@@ -91,7 +87,7 @@
     </div>
 </div>
 
-<!-- Заголовок с текущим фильтром и результатами поиска -->
+<!-- Заголовок с текущим фильтром -->
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h4>
         {% if search_title %}
@@ -119,7 +115,6 @@
                 <thead class="table-light">
                     <tr>
                         <th>Название</th>
-                        <th>Штрих-код</th>
                         <th>QR-код</th>
                         <th>Категория</th>
                         <th>Количество</th>
@@ -135,20 +130,13 @@
                     <tr class="{% if product.get_status == 'expired' %}table-danger{% elif product.get_status == 'expiring_soon' %}table-warning{% endif %}">
                         <td>{{ product.name }}</td>
                         <td>
-                            {% if product.barcode %}
-                                <span class="badge bg-secondary">{{ product.barcode }}</span>
-                            {% else %}
-                                <span class="text-muted">—</span>
-                            {% endif %}
-                        </td>
-                        <td>
                             {% if product.qr_code %}
                                 <span class="badge bg-success" title="QR-код сгенерирован">
-                                    <i class="bi bi-check-circle"></i>
+                                    <i class="bi bi-check-circle"></i> Есть
                                 </span>
                             {% else %}
                                 <span class="badge bg-secondary" title="QR-код не сгенерирован">
-                                    <i class="bi bi-x-circle"></i>
+                                    <i class="bi bi-x-circle"></i> Нет
                                 </span>
                             {% endif %}
                         </td>
@@ -159,7 +147,13 @@
                                 <span class="text-muted">—</span>
                             {% endif %}
                         </td>
-                        <td>{{ product.quantity }}</td>
+                        <td>
+                            {% if product.unit == 'kg' %}
+                                {{ product.quantity|floatformat:3 }}
+                            {% else %}
+                                {{ product.quantity|floatformat:0 }}
+                            {% endif %}
+                        </td>
                         <td>{{ product.get_unit_display }}</td>
                         <td>{{ product.price|floatformat:2 }} ₽</td>
                         <td>{{ product.expiration_date|date:"d.m.Y" }}</td>
@@ -206,7 +200,7 @@
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="10" class="text-center py-4">
+                        <td colspan="9" class="text-center py-4">
                             <i class="bi bi-inbox fs-1 d-block text-muted"></i>
                             <p class="text-muted">
                                 {% if search_query %}

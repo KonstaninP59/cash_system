@@ -25,7 +25,6 @@
                 </ul>
                 
                 <div class="tab-content" id="qrTabsContent">
-                    <!-- Вкладка с камерой -->
                     <div class="tab-pane fade show active" id="camera" role="tabpanel">
                         <div class="text-center mb-3">
                             <div id="qr-reader" style="width: 100%; max-width: 500px; margin: 0 auto;"></div>
@@ -36,7 +35,6 @@
                         </div>
                     </div>
                     
-                    <!-- Вкладка с загрузкой файла -->
                     <div class="tab-pane fade" id="upload" role="tabpanel">
                         <form method="post" enctype="multipart/form-data" action="{% url 'scan_qr_upload' %}">
                             {% csrf_token %}
@@ -82,18 +80,24 @@
                     <div class="col-md-8">
                         <h4>{{ scanned_product.name }}</h4>
                         <table class="table table-sm">
-                            <tr>
+                             <tr>
                                 <th>Цена:</th>
-                                <td>{{ scanned_product.price }} ₽/{{ scanned_product.get_unit_display }}</td>
-                            </tr>
-                            <tr>
+                                <td>{{ scanned_product.price|floatformat:2 }} ₽/{{ scanned_product.get_unit_display }}</td>
+                             </tr>
+                             <tr>
                                 <th>В наличии:</th>
-                                <td>{{ scanned_product.quantity }} {{ scanned_product.get_unit_display }}</td>
-                            </tr>
-                            <tr>
+                                <td>
+                                    {% if scanned_product.unit == 'kg' %}
+                                        {{ scanned_product.quantity|floatformat:3 }} {{ scanned_product.get_unit_display }}
+                                    {% else %}
+                                        {{ scanned_product.quantity|floatformat:0 }} {{ scanned_product.get_unit_display }}
+                                    {% endif %}
+                                </td>
+                             </tr>
+                             <tr>
                                 <th>Срок годности:</th>
                                 <td>{{ scanned_product.expiration_date|date:"d.m.Y" }}</td>
-                            </tr>
+                             </tr>
                         </table>
                         
                         <form method="post" action="{% url 'process_qr_action' %}">
@@ -102,10 +106,40 @@
                             <input type="hidden" name="action" value="{{ scan_action }}">
                             
                             <div class="row">
-                                <div class="col-md-6">
+                                <div class="col-md-12">
                                     <label for="quantity" class="form-label">Количество:</label>
-                                    <input type="number" class="form-control" id="quantity" name="quantity" 
-                                           value="1" min="1" max="{{ scanned_product.quantity }}" required>
+                                    <input type="number" 
+                                           class="form-control" 
+                                           id="quantity" 
+                                           name="quantity" 
+                                           value="1" 
+                                           step="{% if scanned_product.unit == 'kg' %}0.001{% else %}1{% endif %}"
+                                           min="{% if scanned_product.unit == 'kg' %}0.001{% else %}1{% endif %}" 
+                                           max="{{ scanned_product.quantity|stringformat:'f' }}"
+                                           required>
+                                    
+                                    {% if scanned_product.unit == 'kg' %}
+                                    <div class="mt-2">
+                                        <small class="text-muted d-block mb-2">
+                                            <i class="bi bi-info-circle"></i> 
+                                            Можно указать дробное количество (0,001 - {{ scanned_product.quantity|floatformat:3 }} кг, шаг 0,001)
+                                        </small>
+                                        <div class="btn-group w-100" role="group">
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="changeQuantity(-0.1)">
+                                                -0,1 кг
+                                            </button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="changeQuantity(-0.01)">
+                                                -0,01 кг
+                                            </button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="changeQuantity(0.01)">
+                                                +0,01 кг
+                                            </button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="changeQuantity(0.1)">
+                                                +0,1 кг
+                                            </button>
+                                        </div>
+                                    </div>
+                                    {% endif %}
                                 </div>
                             </div>
                             
@@ -132,7 +166,6 @@
 </div>
 {% endif %}
 
-<!-- Подключаем библиотеку для сканирования QR-кодов -->
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 
 <script>
@@ -140,23 +173,55 @@ document.addEventListener('DOMContentLoaded', function() {
     // Инициализация сканера QR-кодов
     const html5QrCode = new Html5Qrcode("qr-reader");
     
-    // Настройки сканера
     const qrCodeSuccessCallback = (decodedText, decodedResult) => {
-        // Останавливаем сканирование
         html5QrCode.stop();
-        
-        // Отправляем результат на сервер
         window.location.href = "{% url 'scan_qr_result' %}?data=" + encodeURIComponent(decodedText) + "&action=" + encodeURIComponent("{{ request.GET.action|default:'add_to_cart' }}");
     };
     
     const config = { fps: 10, qrbox: { width: 250, height: 250 } };
     
-    // Запрашиваем разрешение на использование камеры
     html5QrCode.start({ facingMode: "environment" }, config, qrCodeSuccessCallback)
         .catch(err => {
             console.error("Ошибка доступа к камере:", err);
             document.getElementById('qr-reader').innerHTML = '<div class="alert alert-danger">Не удалось получить доступ к камере. Проверьте разрешения или используйте загрузку фото.</div>';
         });
+    
+    // Функция для изменения количества (для кг)
+    window.changeQuantity = function(delta) {
+        var input = document.getElementById('quantity');
+        if (input) {
+            var current = parseFloat(input.value) || 0;
+            var newValue = current + delta;
+            var min = parseFloat(input.min) || 0;
+            var max = parseFloat(input.max) || Infinity;
+            newValue = Math.min(max, Math.max(min, newValue));
+            input.value = newValue.toFixed(3);
+            // Триггер события change для валидации
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+    };
+    
+    // Форматирование при потере фокуса для кг
+    var quantityInput = document.getElementById('quantity');
+    if (quantityInput && quantityInput.step === '0.001') {
+        quantityInput.addEventListener('blur', function() {
+            var value = parseFloat(this.value);
+            if (!isNaN(value)) {
+                this.value = value.toFixed(3);
+            }
+        });
+        
+        // Обработчик для предотвращения выхода за пределы
+        quantityInput.addEventListener('change', function() {
+            var value = parseFloat(this.value);
+            var min = parseFloat(this.min);
+            var max = parseFloat(this.max);
+            if (!isNaN(value)) {
+                if (value < min) this.value = min.toFixed(3);
+                if (value > max) this.value = max.toFixed(3);
+            }
+        });
+    }
 });
 </script>
 {% endblock %}
