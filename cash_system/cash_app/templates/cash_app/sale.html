@@ -59,8 +59,8 @@
                     </div>
                     
                     <!-- Товары категории -->
-                    <div class="category-content row mt-2 {% if category.id|stringformat:'i' in collapsed_categories %}show{% endif %}"
-                         id="category-content-{{ category.id|default:'0' }}">
+                    <div class="category-content row mt-2 {% if category.id|stringformat:'i' not in collapsed_categories %}show{% endif %}"
+                        id="category-content-{{ category.id|default:'0' }}">
                         {% for product in products %}
                         <div class="col-md-4 mb-3">
                             <div class="card h-100 {% if product.is_expiring_soon %}border-warning{% endif %}">

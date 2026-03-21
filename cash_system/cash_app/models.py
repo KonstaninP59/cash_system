@@ -1,11 +1,15 @@
-import qrcode
+import uuid
+from datetime import date
+from decimal import Decimal
 from io import BytesIO
+
+import qrcode
+from django.contrib.auth.models import User
 from django.core.files.base import ContentFile
 from django.db import models
-from django.contrib.auth.models import User
-from datetime import date
+from django.db.models import Sum
 from django.utils import timezone
-import uuid
+
 
 class Category(models.Model):
     """Модель категории товаров"""
@@ -28,7 +32,7 @@ class Product(models.Model):
         ('pcs', 'шт'),
         ('kg', 'кг'),
     ]
-    
+
     name = models.CharField('Название', max_length=200)
     qr_code = models.ImageField('QR-код', upload_to='qrcodes/', blank=True, null=True)
     qr_uuid = models.UUIDField('UUID для QR', default=uuid.uuid4, editable=False, unique=True)
@@ -40,7 +44,7 @@ class Product(models.Model):
         verbose_name='Категория',
         related_name='products'
     )
-    quantity = models.DecimalField('Количество', max_digits=10, decimal_places=3, default=0)  # Изменяем на Decimal
+    quantity = models.DecimalField('Количество', max_digits=10, decimal_places=3, default=0)
     price = models.DecimalField('Цена', max_digits=10, decimal_places=2)
     unit = models.CharField('Единица измерения', max_length=3, choices=UNIT_CHOICES, default='pcs')
     expiration_date = models.DateField('Срок годности')
@@ -54,26 +58,20 @@ class Product(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.get_unit_display()})"
-    
-
-    class Meta:
-        verbose_name = 'Товар'
-        verbose_name_plural = 'Товары'
-        ordering = ['name']
-
-    def __str__(self):
-        return f"{self.name} ({self.get_unit_display()})"
 
     def save(self, *args, **kwargs):
-        # Генерируем QR-код при создании товара
-        if not self.qr_code and self.pk:  # Генерируем только если товар уже сохранен
-            self.generate_qr_code()
+        qr_missing_before_save = not bool(self.qr_code)
         super().save(*args, **kwargs)
+
+        # Генерируем QR после первого сохранения, когда уже есть self.pk
+        if qr_missing_before_save and not self.qr_code:
+            self.generate_qr_code()
+            super().save(update_fields=['qr_code'])
 
     def generate_qr_code(self):
         """Генерация QR-кода для товара"""
         qr_data = f"product:{self.qr_uuid}"
-        
+
         qr = qrcode.QRCode(
             version=1,
             error_correction=qrcode.constants.ERROR_CORRECT_L,
@@ -82,12 +80,12 @@ class Product(models.Model):
         )
         qr.add_data(qr_data)
         qr.make(fit=True)
-        
+
         img = qr.make_image(fill_color="black", back_color="white")
-        
+
         buffer = BytesIO()
         img.save(buffer, format='PNG')
-        filename = f'qr_{self.id}_{self.qr_uuid}.png'
+        filename = f'qr_{self.pk}_{self.qr_uuid}.png'
         self.qr_code.save(filename, ContentFile(buffer.getvalue()), save=False)
 
     def is_expired(self):
@@ -107,10 +105,8 @@ class Product(models.Model):
         return 'good'
 
     def get_qr_url(self):
-        if self.qr_code:
-            return self.qr_code.url
-        return None
-    
+        return self.qr_code.url if self.qr_code else None
+
 
 class Coupon(models.Model):
     """Модель купона на скидку"""
@@ -136,19 +132,25 @@ class Coupon(models.Model):
     def is_valid(self):
         if not self.is_active:
             return False
+
         now = timezone.now()
+
         if self.valid_from and now < self.valid_from:
             return False
+
         if self.valid_until and now > self.valid_until:
             return False
-        if self.max_uses and self.used_count >= self.max_uses:
+
+        if self.max_uses is not None and self.used_count >= self.max_uses:
             return False
+
         return True
 
     def apply_discount(self, total):
         if self.is_valid():
-            return total * (100 - self.discount_percent) / 100
-        return total
+            total = Decimal(str(total))
+            return total * (Decimal('100') - Decimal(str(self.discount_percent))) / Decimal('100')
+        return Decimal(str(total))
 
 
 class History(models.Model):
@@ -160,8 +162,8 @@ class History(models.Model):
     ]
 
     type = models.CharField('Тип операции', max_length=20, choices=TYPE_CHOICES)
-    product = models.ForeignKey(Product, on_delete=models.CASCADE, verbose_name='Товар')
-    quantity = models.DecimalField('Количество', max_digits=10, decimal_places=3)  # Изменяем на Decimal
+    product = models.ForeignKey(Product, on_delete=models.PROTECT, verbose_name='Товар')
+    quantity = models.DecimalField('Количество', max_digits=10, decimal_places=3)
     total_price = models.DecimalField('Сумма', max_digits=10, decimal_places=2, null=True, blank=True)
     reason = models.CharField('Причина', max_length=200, blank=True, null=True)
     coupon = models.ForeignKey(
@@ -182,7 +184,7 @@ class History(models.Model):
 
     def __str__(self):
         return f"{self.get_type_display()} - {self.product.name} - {self.quantity} {self.product.get_unit_display()}"
-    
+
 
 class SalesPlan(models.Model):
     """Модель плана продаж для пользователей"""
@@ -190,7 +192,14 @@ class SalesPlan(models.Model):
     monthly_target = models.DecimalField('Месячный план', max_digits=10, decimal_places=2, default=0)
     created_at = models.DateTimeField('Дата создания', auto_now_add=True)
     updated_at = models.DateTimeField('Дата обновления', auto_now=True)
-    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='plan_updates', verbose_name='Кем обновлено')
+    updated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='plan_updates',
+        verbose_name='Кем обновлено'
+    )
 
     class Meta:
         verbose_name = 'План продаж'
@@ -200,39 +209,33 @@ class SalesPlan(models.Model):
         return f"План {self.user.username}: {self.monthly_target} ₽"
 
     def get_current_month_sales(self):
-        """Получить сумму продаж за текущий месяц"""
         now = timezone.now()
         start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        sales = History.objects.filter(
+        total = History.objects.filter(
             type='sale',
             user=self.user,
             date__gte=start_of_month
-        )
-        total = sum(float(sale.total_price or 0) for sale in sales)
+        ).aggregate(total=Sum('total_price'))['total'] or Decimal('0')
         return total
 
     def get_completion_percentage(self):
-        """Процент выполнения плана (может быть больше 100%)"""
         if self.monthly_target == 0:
             return 0
         current = self.get_current_month_sales()
-        return round((current / float(self.monthly_target)) * 100, 1)
+        return round(float((current / self.monthly_target) * 100), 1)
 
     def get_remaining_amount(self):
-        """Осталось выполнить до плана"""
         if self.monthly_target == 0:
-            return 0
+            return Decimal('0')
         current = self.get_current_month_sales()
-        remaining = float(self.monthly_target) - current
-        return max(0, remaining)
+        remaining = self.monthly_target - current
+        return remaining if remaining > 0 else Decimal('0')
 
     def get_daily_average(self):
-        """Средняя сумма продаж в день"""
         now = timezone.now()
         start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         days_passed = (now - start_of_month).days + 1
         current = self.get_current_month_sales()
-        if days_passed == 0:
+        if days_passed <= 0:
             return 0
-        return round(current / days_passed, 2)
-    
+        return round(float(current / days_passed), 2)

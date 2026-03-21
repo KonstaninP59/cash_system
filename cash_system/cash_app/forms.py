@@ -1,6 +1,10 @@
+from decimal import Decimal
+
 from django import forms
 from django.contrib.auth.forms import AuthenticationForm
-from .models import Product, SalesPlan, Coupon
+
+from .models import Coupon, Product, SalesPlan
+
 
 class LoginForm(AuthenticationForm):
     """Форма входа"""
@@ -16,6 +20,7 @@ class LoginForm(AuthenticationForm):
 
 class ProductForm(forms.ModelForm):
     """Форма для товара"""
+
     class Meta:
         model = Product
         fields = ['name', 'category', 'quantity', 'price', 'unit', 'expiration_date']
@@ -36,39 +41,31 @@ class ProductForm(forms.ModelForm):
             'expiration_date': 'Срок годности',
         }
 
+    def clean(self):
+        cleaned_data = super().clean()
+        unit = cleaned_data.get('unit')
+        quantity = cleaned_data.get('quantity')
 
-class BarcodeForm(forms.Form):
-    """Форма для добавления по штрих-коду"""
-    barcode = forms.CharField(
-        label='Штрих-код',
-        max_length=50,
-        widget=forms.TextInput(attrs={
-            'class': 'form-control',
-            'placeholder': 'Введите или отсканируйте штрих-код',
-            'autofocus': True
-        })
-    )
-    quantity = forms.IntegerField(
-        label='Количество',
-        min_value=1,
-        initial=1,
-        widget=forms.NumberInput(attrs={'class': 'form-control'})
-    )
+        if quantity is None:
+            return cleaned_data
 
-class SaleForm(forms.Form):
-    """Форма для продажи"""
-    product_id = forms.IntegerField(widget=forms.HiddenInput())
-    quantity = forms.IntegerField(
-        min_value=1,
-        widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'style': 'width: 80px;'})
-    )
+        if unit == 'pcs' and quantity != quantity.to_integral_value():
+            self.add_error('quantity', 'Для штучного товара количество должно быть целым числом.')
+
+        if quantity < 0:
+            self.add_error('quantity', 'Количество не может быть отрицательным.')
+
+        return cleaned_data
+
 
 class DisposalForm(forms.Form):
     """Форма для списания товара"""
-    quantity = forms.IntegerField(
+    quantity = forms.DecimalField(
         label='Количество для списания',
-        min_value=1,
-        widget=forms.NumberInput(attrs={'class': 'form-control'})
+        min_value=Decimal('0.001'),
+        decimal_places=3,
+        max_digits=10,
+        widget=forms.NumberInput(attrs={'class': 'form-control', 'step': '0.001', 'min': '0.001'})
     )
     reason = forms.CharField(
         label='Причина списания',
@@ -76,6 +73,7 @@ class DisposalForm(forms.Form):
         required=False,
         widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Например: просрочка, брак'})
     )
+
 
 class SalesPlanForm(forms.ModelForm):
     """Форма для плана продаж"""
@@ -94,8 +92,10 @@ class SalesPlanForm(forms.ModelForm):
             'monthly_target': 'Месячный план (₽)',
         }
 
+
 class CouponForm(forms.ModelForm):
     """Форма для купона"""
+
     class Meta:
         model = Coupon
         fields = ['code', 'discount_percent', 'is_active', 'valid_from', 'valid_until', 'max_uses']
@@ -103,9 +103,17 @@ class CouponForm(forms.ModelForm):
             'code': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Например: SUMMER2024'}),
             'discount_percent': forms.NumberInput(attrs={'class': 'form-control', 'min': 0, 'max': 100}),
             'is_active': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
-            'valid_from': forms.DateTimeInput(attrs={'class': 'form-control', 'type': 'datetime-local'}),
-            'valid_until': forms.DateTimeInput(attrs={'class': 'form-control', 'type': 'datetime-local'}),
-            'max_uses': forms.NumberInput(attrs={'class': 'form-control', 'min': 0, 'placeholder': 'Оставьте пустым для безлимита'}),
+            'valid_from': forms.DateTimeInput(
+                format='%Y-%m-%dT%H:%M',
+                attrs={'class': 'form-control', 'type': 'datetime-local'}
+            ),
+            'valid_until': forms.DateTimeInput(
+                format='%Y-%m-%dT%H:%M',
+                attrs={'class': 'form-control', 'type': 'datetime-local'}
+            ),
+            'max_uses': forms.NumberInput(
+                attrs={'class': 'form-control', 'min': 1, 'placeholder': 'Оставьте пустым для безлимита'}
+            ),
         }
         labels = {
             'code': 'Код купона',
@@ -113,6 +121,28 @@ class CouponForm(forms.ModelForm):
             'is_active': 'Активен',
             'valid_from': 'Действует с',
             'valid_until': 'Действует до',
-            'max_uses': 'Максимальное использований',
+            'max_uses': 'Максимальное количество использований',
         }
-        
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['valid_from'].input_formats = ['%Y-%m-%dT%H:%M']
+        self.fields['valid_until'].input_formats = ['%Y-%m-%dT%H:%M']
+
+    def clean(self):
+        cleaned_data = super().clean()
+        valid_from = cleaned_data.get('valid_from')
+        valid_until = cleaned_data.get('valid_until')
+        max_uses = cleaned_data.get('max_uses')
+        discount_percent = cleaned_data.get('discount_percent')
+
+        if valid_from and valid_until and valid_until <= valid_from:
+            self.add_error('valid_until', 'Дата окончания должна быть позже даты начала.')
+
+        if discount_percent is not None and not (0 <= discount_percent <= 100):
+            self.add_error('discount_percent', 'Скидка должна быть от 0 до 100.')
+
+        if max_uses is not None and max_uses < 1:
+            self.add_error('max_uses', 'Максимальное количество использований должно быть больше 0.')
+
+        return cleaned_data

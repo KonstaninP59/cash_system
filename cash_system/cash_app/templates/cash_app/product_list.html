@@ -4,218 +4,240 @@
 {% block title %} - Склад{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h1><i class="bi bi-box"></i> Управление складом</h1>
-    <div>
-        <a href="{% url 'scan_qr' %}?action=receipt" class="btn btn-info me-2">
+<section class="inventory-header">
+    <div class="inventory-header-left">
+        <div class="inventory-kicker">
+            <i class="bi bi-box-seam"></i>
+            <span>Склад и контроль остатков</span>
+        </div>
+        <h1>Управление складом</h1>
+        <div class="inventory-subtitle">
+            Просматривайте остатки, контролируйте сроки годности, быстро находите товары и управляйте QR-кодами.
+        </div>
+    </div>
+
+    <div class="inventory-actions">
+        <a href="{% url 'scan_qr' %}?action=receipt" class="btn btn-info">
             <i class="bi bi-qr-code-scan"></i> Добавить по QR-коду
         </a>
         <a href="{% url 'product_create' %}" class="btn btn-success">
             <i class="bi bi-plus-lg"></i> Добавить товар
         </a>
     </div>
-</div>
+</section>
 
-<!-- Статистика с кликабельными карточками -->
-<div class="row mb-4">
-    <div class="col-md-4">
-        <a href="?filter=all{% if search_query %}&search={{ search_query }}{% endif %}" class="text-decoration-none">
-            <div class="card text-white bg-primary {% if current_filter == 'all' %}shadow-lg border-3 border-white{% endif %}" style="cursor: pointer;">
-                <div class="card-body">
-                    <h5 class="card-title">Всего товаров</h5>
-                    <p class="display-4">{{ total_products }}</p>
-                </div>
-            </div>
-        </a>
-    </div>
-    <div class="col-md-4">
-        <a href="?filter=expiring_soon{% if search_query %}&search={{ search_query }}{% endif %}" class="text-decoration-none">
-            <div class="card text-white bg-warning {% if current_filter == 'expiring_soon' %}shadow-lg border-3 border-white{% endif %}" style="cursor: pointer;">
-                <div class="card-body">
-                    <h5 class="card-title">Скоро истекают</h5>
-                    <p class="display-4">{{ expiring_soon_count }}</p>
-                </div>
-            </div>
-        </a>
-    </div>
-    <div class="col-md-4">
-        <a href="?filter=expired{% if search_query %}&search={{ search_query }}{% endif %}" class="text-decoration-none">
-            <div class="card text-white bg-danger {% if current_filter == 'expired' %}shadow-lg border-3 border-white{% endif %}" style="cursor: pointer;">
-                <div class="card-body">
-                    <h5 class="card-title">Просрочено</h5>
-                    <p class="display-4">{{ expired_count }}</p>
-                </div>
-            </div>
-        </a>
-    </div>
-</div>
-
-<!-- Поиск -->
-<div class="row mb-4">
-    <div class="col-md-8">
-        <form method="get" class="d-flex gap-2">
-            <div class="flex-grow-1">
-                <div class="input-group">
-                    <span class="input-group-text"><i class="bi bi-search"></i></span>
-                    <input type="text" name="search" class="form-control" 
-                           placeholder="Поиск по названию..." 
-                           value="{{ search_query }}"
-                           autocomplete="off">
-                    <input type="hidden" name="filter" value="{{ current_filter }}">
-                    {% if search_query %}
-                    <button class="btn btn-outline-secondary" type="button" 
-                            onclick="window.location.href='?filter={{ current_filter }}'">
-                        <i class="bi bi-x"></i>
-                    </button>
-                    {% endif %}
-                </div>
-            </div>
-            <button type="submit" class="btn btn-primary">Найти</button>
-            {% if search_query %}
-                <a href="?filter={{ current_filter }}" class="btn btn-outline-secondary">
-                    Сбросить
-                </a>
-            {% endif %}
-        </form>
-    </div>
-    <div class="col-md-4 text-end">
-        {% if current_filter != 'all' or search_query %}
-            <a href="?filter=all" class="btn btn-outline-secondary">
-                <i class="bi bi-x-circle"></i> Сбросить все фильтры
-            </a>
-        {% endif %}
-    </div>
-</div>
-
-<!-- Заголовок с текущим фильтром -->
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h4>
-        {% if search_title %}
-            <i class="bi bi-search"></i> {{ search_title }}
-        {% else %}
-            {% if current_filter == 'expired' %}
-                <i class="bi bi-exclamation-triangle-fill text-danger"></i> Просроченные товары
-            {% elif current_filter == 'expiring_soon' %}
-                <i class="bi bi-clock-fill text-warning"></i> Товары с истекающим сроком
+<section class="metric-row">
+    <a href="?filter=all{% if search_query %}&search={{ search_query }}{% endif %}" class="metric-box primary text-decoration-none">
+        <div class="metric-title">Всего товаров</div>
+        <div class="metric-value">{{ total_products }}</div>
+        <div class="metric-note">
+            {% if current_filter == 'all' %}
+                Активный режим просмотра
             {% else %}
-                <i class="bi bi-boxes"></i> Все товары
+                Показать все товары
             {% endif %}
-        {% endif %}
-        {% if products %}
-            <small class="text-muted ms-2">({{ products|length }} товаров)</small>
-        {% endif %}
-    </h4>
-</div>
+        </div>
+    </a>
 
-<!-- Таблица товаров -->
-<div class="card shadow">
-    <div class="card-body">
+    <a href="?filter=expiring_soon{% if search_query %}&search={{ search_query }}{% endif %}" class="metric-box warning text-decoration-none">
+        <div class="metric-title">Скоро истекают</div>
+        <div class="metric-value">{{ expiring_soon_count }}</div>
+        <div class="metric-note">
+            Товары, требующие внимания
+        </div>
+    </a>
+
+    <a href="?filter=expired{% if search_query %}&search={{ search_query }}{% endif %}" class="metric-box danger text-decoration-none">
+        <div class="metric-title">Просрочено</div>
+        <div class="metric-value">{{ expired_count }}</div>
+        <div class="metric-note">
+            Требуют списания или удаления
+        </div>
+    </a>
+</section>
+
+<section class="inventory-toolbar">
+    <form method="get" class="inventory-toolbar-form">
+        <div class="input-group">
+            <span class="input-group-text">
+                <i class="bi bi-search"></i>
+            </span>
+            <input type="text"
+                   name="search"
+                   class="form-control"
+                   placeholder="Поиск по названию товара..."
+                   value="{{ search_query }}"
+                   autocomplete="off">
+            <input type="hidden" name="filter" value="{{ current_filter }}">
+        </div>
+
+        <button type="submit" class="btn btn-primary">Найти</button>
+
+        {% if current_filter != 'all' or search_query %}
+            <a href="?filter=all" class="btn btn-outline-secondary">Сбросить</a>
+        {% endif %}
+    </form>
+</section>
+
+<section class="inventory-section-title">
+    {% if search_title %}
+        <i class="bi bi-search"></i>
+        <h3>{{ search_title }}</h3>
+    {% else %}
+        <i class="bi bi-boxes"></i>
+        <h3>
+            {% if current_filter == 'expired' %}
+                Просроченные товары
+            {% elif current_filter == 'expiring_soon' %}
+                Товары с истекающим сроком
+            {% else %}
+                Все товары
+            {% endif %}
+        </h3>
+    {% endif %}
+
+    {% if products %}
+        <span class="muted-count">({{ products|length }} товаров)</span>
+    {% endif %}
+</section>
+
+<section class="inventory-table-card">
+    <div class="inventory-table-shell">
         <div class="table-responsive">
-            <table class="table table-hover">
+            <table class="table table-hover align-middle">
                 <thead class="table-light">
                     <tr>
                         <th>Название</th>
-                        <th>QR-код</th>
+                        <th>QR</th>
                         <th>Категория</th>
                         <th>Количество</th>
                         <th>Ед.</th>
                         <th>Цена</th>
                         <th>Срок годности</th>
                         <th>Статус</th>
-                        <th>Действия</th>
+                        <th class="text-end">Действия</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for product in products %}
-                    <tr class="{% if product.get_status == 'expired' %}table-danger{% elif product.get_status == 'expiring_soon' %}table-warning{% endif %}">
-                        <td>{{ product.name }}</td>
+                    <tr class="{% if product.get_status == 'expired' %}inventory-row-danger{% elif product.get_status == 'expiring_soon' %}inventory-row-warning{% endif %}">
+                        <td class="fw-semibold">{{ product.name }}</td>
+
                         <td>
                             {% if product.qr_code %}
-                                <span class="badge bg-success" title="QR-код сгенерирован">
+                                <span class="info-pill qr">
                                     <i class="bi bi-check-circle"></i> Есть
                                 </span>
                             {% else %}
-                                <span class="badge bg-secondary" title="QR-код не сгенерирован">
+                                <span class="info-pill muted">
                                     <i class="bi bi-x-circle"></i> Нет
                                 </span>
                             {% endif %}
                         </td>
+
                         <td>
                             {% if product.category %}
-                                <span class="badge bg-info">{{ product.category.name }}</span>
+                                <span class="info-pill category">{{ product.category.name }}</span>
                             {% else %}
                                 <span class="text-muted">—</span>
                             {% endif %}
                         </td>
-                        <td>
+
+                        <td class="fw-medium">
                             {% if product.unit == 'kg' %}
                                 {{ product.quantity|floatformat:3 }}
                             {% else %}
                                 {{ product.quantity|floatformat:0 }}
                             {% endif %}
                         </td>
+
                         <td>{{ product.get_unit_display }}</td>
                         <td>{{ product.price|floatformat:2 }} ₽</td>
                         <td>{{ product.expiration_date|date:"d.m.Y" }}</td>
+
                         <td>
                             {% if product.get_status == 'expired' %}
-                                <span class="badge bg-danger">Просрочен</span>
+                                <span class="status-pill danger">
+                                    <i class="bi bi-x-circle"></i> Просрочен
+                                </span>
                             {% elif product.get_status == 'expiring_soon' %}
-                                <span class="badge bg-warning text-dark">Скоро истекает</span>
+                                <span class="status-pill warning">
+                                    <i class="bi bi-clock"></i> Скоро истекает
+                                </span>
                             {% else %}
-                                <span class="badge bg-success">Годен</span>
+                                <span class="status-pill good">
+                                    <i class="bi bi-check2-circle"></i> Годен
+                                </span>
                             {% endif %}
                         </td>
-                        <td>
-                            <a href="{% url 'product_update' product.pk %}" class="btn btn-sm btn-primary" title="Редактировать">
-                                <i class="bi bi-pencil"></i>
-                            </a>
-                            {% if product.is_expired and product.quantity > 0 %}
-                                <a href="{% url 'product_disposal' product.pk %}" class="btn btn-sm btn-warning" title="Списать">
-                                    <i class="bi bi-trash"></i>
+
+                        <td class="text-end">
+                            <div class="action-buttons">
+                                <a href="{% url 'product_update' product.pk %}"
+                                   class="btn btn-outline-primary"
+                                   title="Редактировать">
+                                    <i class="bi bi-pencil"></i>
                                 </a>
-                            {% endif %}
-                            <div class="btn-group">
-                                <button type="button" class="btn btn-sm btn-info dropdown-toggle" data-bs-toggle="dropdown" title="QR-код">
-                                    <i class="bi bi-qr-code"></i>
-                                </button>
-                                <ul class="dropdown-menu">
-                                    <li><a class="dropdown-item" href="{% url 'generate_product_qr' product.pk %}">
-                                        <i class="bi bi-plus-circle"></i> Сгенерировать
-                                    </a></li>
-                                    {% if product.qr_code %}
-                                    <li><a class="dropdown-item" href="{% url 'download_product_qr' product.pk %}" target="_blank">
-                                        <i class="bi bi-download"></i> Скачать
-                                    </a></li>
-                                    <li><a class="dropdown-item" href="{% url 'print_product_qr' product.pk %}" target="_blank">
-                                        <i class="bi bi-printer"></i> Печать
-                                    </a></li>
-                                    {% endif %}
-                                </ul>
+
+                                {% if product.is_expired and product.quantity > 0 %}
+                                    <a href="{% url 'product_disposal' product.pk %}"
+                                       class="btn btn-outline-warning"
+                                       title="Списать">
+                                        <i class="bi bi-trash"></i>
+                                    </a>
+                                {% endif %}
+
+                                <div class="dropdown d-inline-block">
+                                    <button type="button"
+                                            class="btn btn-outline-secondary dropdown-toggle"
+                                            data-bs-toggle="dropdown"
+                                            title="QR-код">
+                                        <i class="bi bi-qr-code"></i>
+                                    </button>
+                                    <ul class="dropdown-menu dropdown-menu-end app-dropdown">
+                                        <li>
+                                            <a class="dropdown-item" href="{% url 'generate_product_qr' product.pk %}">
+                                                <i class="bi bi-plus-circle"></i> Сгенерировать
+                                            </a>
+                                        </li>
+                                        {% if product.qr_code %}
+                                        <li>
+                                            <a class="dropdown-item" href="{% url 'download_product_qr' product.pk %}" target="_blank">
+                                                <i class="bi bi-download"></i> Скачать
+                                            </a>
+                                        </li>
+                                        <li>
+                                            <a class="dropdown-item" href="{% url 'print_product_qr' product.pk %}" target="_blank">
+                                                <i class="bi bi-printer"></i> Печать
+                                            </a>
+                                        </li>
+                                        {% endif %}
+                                    </ul>
+                                </div>
+
+                                <a href="{% url 'product_delete' product.pk %}"
+                                   class="btn btn-outline-danger"
+                                   title="Удалить">
+                                    <i class="bi bi-x-lg"></i>
+                                </a>
                             </div>
-                            <a href="{% url 'product_delete' product.pk %}" class="btn btn-sm btn-danger" title="Удалить">
-                                <i class="bi bi-x-lg"></i>
-                            </a>
                         </td>
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="9" class="text-center py-4">
-                            <i class="bi bi-inbox fs-1 d-block text-muted"></i>
-                            <p class="text-muted">
+                        <td colspan="9">
+                            <div class="empty-state">
+                                <i class="bi bi-inbox"></i>
                                 {% if search_query %}
-                                    Товары по запросу "{{ search_query }}" не найдены
+                                    <div>Товары по запросу "{{ search_query }}" не найдены</div>
                                 {% elif current_filter == 'expired' %}
-                                    Нет просроченных товаров
+                                    <div>Нет просроченных товаров</div>
                                 {% elif current_filter == 'expiring_soon' %}
-                                    Нет товаров с истекающим сроком
+                                    <div>Нет товаров с истекающим сроком</div>
                                 {% else %}
-                                    Нет товаров на складе
+                                    <div>Нет товаров на складе</div>
                                 {% endif %}
-                            </p>
-                            <a href="{% url 'product_create' %}" class="btn btn-primary">
-                                <i class="bi bi-plus-lg"></i> Добавить товар
-                            </a>
+                            </div>
                         </td>
                     </tr>
                     {% endfor %}
@@ -223,5 +245,5 @@
             </table>
         </div>
     </div>
-</div>
+</section>
 {% endblock %}

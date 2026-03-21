@@ -46,8 +46,8 @@
         {% endif %}
         
         <div class="product-name">{{ product.name }}</div>
-        <div class="product-price">{{ product.price }} ₽/{{ product.get_unit_display }}</div>
-        <div>Штрих-код: {{ product.barcode|default:"—" }}</div>
+        <div class="product-price">{{ product.price }} ₽ / {{ product.get_unit_display }}</div>
+        <div>UUID QR: {{ product.qr_uuid }}</div>
     </div>
 </body>
 </html>
