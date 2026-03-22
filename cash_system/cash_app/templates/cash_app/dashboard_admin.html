@@ -106,8 +106,8 @@
                             <div>
                                 <strong>{{ product.product__name|default:"Товар" }}</strong>
                                 <div class="small text-muted">
-                                    <i class="bi bi-{% if product.product__unit == 'kg' %}scale{% else %}box{% endif %}"></i>
-                                    {% if product.product__unit == 'kg' %}
+                                    <i class="bi bi-{% if product.unit == 'kg' %}scale{% else %}box{% endif %}"></i>
+                                    {% if product.unit == 'kg' %}
                                         {{ product.quantity|floatformat:3 }} кг
                                     {% else %}
                                         {{ product.quantity|floatformat:0 }} шт

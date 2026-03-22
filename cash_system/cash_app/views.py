@@ -37,20 +37,40 @@ def is_admin(user):
 
 
 def parse_decimal_quantity(value):
+    """
+    Преобразует значение в Decimal, корректно обрабатывая запятые и точки
+    """
+    if value is None:
+        raise ValueError('Количество не указано')
+    
+    # Преобразуем в строку и заменяем запятую на точку
+    str_value = str(value).strip().replace(',', '.')
+    
+    # Проверяем, что это число
+    if not str_value:
+        raise ValueError('Количество не может быть пустым')
+    
     try:
-        return Decimal(str(value).replace(',', '.'))
+        # Пробуем преобразовать в Decimal
+        result = Decimal(str_value)
+        return result
     except (InvalidOperation, TypeError, ValueError):
-        raise ValueError('Неверный формат количества')
+        raise ValueError(f'Неверный формат количества: "{value}"')
 
 
 def validate_quantity_for_product(product, quantity):
+    """
+    Проверяет количество товара на корректность
+    """
     if quantity <= 0:
         raise ValueError('Количество должно быть больше 0')
 
     if product.unit == 'kg':
+        # Для кг минимальное количество 0.001
         if quantity < Decimal('0.001'):
             raise ValueError(f'Минимальное количество для "{product.name}" — 0,001 кг')
     elif product.unit == 'pcs':
+        # Для штучных количество должно быть целым
         if quantity != quantity.to_integral_value():
             raise ValueError(f'Для товара "{product.name}" количество должно быть целым числом')
 
@@ -351,44 +371,47 @@ def sale_view(request):
         
         try:
             sale_items = []
-            total_without_discount = 0
+            total_without_discount = Decimal('0.00')
             sale_group_id = uuid.uuid4()
             
             for product_id, item in cart.items():
                 product = Product.objects.get(pk=product_id)
-                quantity = Decimal(str(item['quantity']))
+                quantity = Decimal(str(item['quantity']).replace(',', '.'))
                 
+                # Проверка минимального количества для кг
                 if product.unit == 'kg' and quantity < Decimal('0.001'):
                     raise ValueError(f'Минимальное количество для "{product.name}" - 0,001 кг')
                 
+                # Проверка наличия на складе
                 if float(product.quantity) < float(quantity):
                     raise ValueError(f'Недостаточно "{product.name}" на складе')
                 
+                # Проверка на просрочку
                 if product.expiration_date < date.today():
                     raise ValueError(f'Товар "{product.name}" просрочен')
                 
-                item_price = float(product.price)
-                item_total = item_price * float(quantity)
+                item_price = Decimal(str(product.price))
+                item_total = item_price * quantity
                 total_without_discount += item_total
                 
                 sale_items.append({
                     'product_id': product.id,
                     'product_name': product.name,
-                    'quantity': float(quantity),
-                    'price': round(item_price, 2),
-                    'total': round(item_total * discount_factor, 2),
+                    'quantity': float(quantity) if product.unit == 'kg' else int(quantity),
+                    'price': float(item_price.quantize(Decimal('0.01'))),
+                    'total': float((item_total * Decimal(str(discount_factor))).quantize(Decimal('0.01'))),
                     'unit': product.get_unit_display(),
                 })
             
-            total_with_discount = round(total_without_discount * discount_factor, 2)
-            discount_amount = round(total_without_discount - total_with_discount, 2) if coupon else 0
+            total_with_discount = (total_without_discount * Decimal(str(discount_factor))).quantize(Decimal('0.01'))
+            discount_amount = (total_without_discount - total_with_discount).quantize(Decimal('0.01')) if coupon else Decimal('0.00')   
             
             # Сохраняем в сессию
             request.session['pending_sale'] = {
                 'sale_items': sale_items,
-                'total_without_discount': round(total_without_discount, 2),
-                'total_with_discount': total_with_discount,
-                'discount_amount': discount_amount,
+                'total_without_discount': round(float(total_without_discount), 2),
+                'total_with_discount': float(total_with_discount),
+                'discount_amount': float(discount_amount),
                 'coupon_id': coupon.id if coupon else None,
                 'sale_group_id': str(sale_group_id),
             }
@@ -399,9 +422,9 @@ def sale_view(request):
                      'price': item['price'], 'total': item['total'], 'unit': item['unit']}
                     for item in sale_items
                 ],
-                'subtotal': round(total_without_discount, 2),
-                'discount': discount_amount,
-                'total': total_with_discount,
+                'subtotal': round(float(total_without_discount), 2),
+                'discount': float(discount_amount),
+                'total': float(total_with_discount),
                 'coupon_code': coupon.code if coupon else None,
                 'date': timezone.now().strftime('%d.%m.%Y %H:%M'),
                 'cashier': request.user.username,
@@ -415,15 +438,12 @@ def sale_view(request):
             messages.error(request, f'Ошибка: {str(e)}')
             return redirect('sale')
     
-    # GET часть
+    # GET часть - отображение страницы продажи
     # Группируем товары по категориям
     available_products = Product.objects.filter(
         quantity__gt=0,
         expiration_date__gte=date.today()
     ).select_related('category').order_by('category__name', 'name')
-    
-    # Получаем все категории
-    all_categories = Category.objects.all().order_by('name')
     
     # Группируем товары по категориям
     categories_with_products = {}
@@ -439,22 +459,24 @@ def sale_view(request):
     # Получаем товары в корзине
     cart = request.session.get('cart', {})
     cart_items = []
-    total = 0
+    total = Decimal('0.00')
     
     for product_id, item in cart.items():
         try:
             product = Product.objects.get(pk=product_id)
-            subtotal = float(product.price) * item['quantity']
+            quantity = Decimal(str(item['quantity']).replace(',', '.'))
+            subtotal = product.price * quantity
             total += subtotal
+            
             cart_items.append({
                 'product': product,
-                'quantity': item['quantity'],
-                'subtotal': subtotal
+                'quantity': float(quantity) if product.unit == 'kg' else int(quantity),
+                'subtotal': float(subtotal)
             })
         except Product.DoesNotExist:
             continue
     
-    total = round(total, 2)
+    total = total.quantize(Decimal('0.01'))
     
     # Получаем доступные купоны
     now = timezone.now()
@@ -469,16 +491,15 @@ def sale_view(request):
     # Проверяем примененный купон
     applied_coupon_id = request.session.get('applied_coupon')
     applied_coupon = None
-    discount_amount = 0
+    discount_amount = Decimal('0.00')
     total_with_discount = total
     
     if applied_coupon_id:
         try:
             applied_coupon = Coupon.objects.get(pk=applied_coupon_id)
             if applied_coupon.is_valid():
-                total_with_discount = applied_coupon.apply_discount(total)
-                total_with_discount = round(total_with_discount, 2)
-                discount_amount = round(total - total_with_discount, 2)
+                total_with_discount = applied_coupon.apply_discount(total).quantize(Decimal('0.01'))
+                discount_amount = (total - total_with_discount).quantize(Decimal('0.01'))
             else:
                 del request.session['applied_coupon']
                 request.session.modified = True
@@ -488,12 +509,11 @@ def sale_view(request):
     
     context = {
         'categories': categories_with_products,
-        'all_categories': all_categories,
         'collapsed_categories': [str(cat_id) for cat_id in collapsed_categories],
         'cart_items': cart_items,
-        'total': total,
-        'total_with_discount': total_with_discount,
-        'discount_amount': discount_amount,
+        'total': float(total),
+        'total_with_discount': float(total_with_discount),
+        'discount_amount': float(discount_amount),
         'available_coupons': available_coupons,
         'applied_coupon': applied_coupon,
     }
@@ -514,25 +534,35 @@ def add_to_cart(request):
             messages.error(request, str(e))
             return redirect('sale')
 
+        # Проверка наличия на складе
         if product.quantity < quantity:
             messages.error(request, f'Недостаточно товара "{product.name}" на складе')
             return redirect('sale')
 
+        # Проверка на просрочку
         if product.expiration_date < date.today():
             messages.error(request, f'Товар "{product.name}" просрочен и не может быть продан')
             return redirect('sale')
 
+        # Получаем текущую корзину
         cart = request.session.get('cart', {})
-        product_id = str(product.id)
+        product_id_str = str(product.id)
 
-        current_quantity = Decimal(str(cart.get(product_id, {}).get('quantity', 0)))
+        # Получаем текущее количество товара в корзине
+        current_quantity = Decimal('0.00')
+        if product_id_str in cart:
+            current_quantity = parse_decimal_quantity(cart[product_id_str]['quantity'])
+        
+        # Вычисляем новое количество
         new_quantity = current_quantity + quantity
 
+        # Проверяем, что новое количество не превышает остаток на складе
         if new_quantity > product.quantity:
-            messages.error(request, f'Нельзя добавить больше, чем есть на складе')
+            messages.error(request, f'Нельзя добавить больше, чем есть на складе (доступно: {product.quantity} {product.get_unit_display()})')
             return redirect('sale')
 
-        cart[product_id] = {
+        # Сохраняем в корзину
+        cart[product_id_str] = {
             'quantity': float(new_quantity) if product.unit == 'kg' else int(new_quantity),
             'price': str(product.price),
             'unit': product.unit,
@@ -541,7 +571,13 @@ def add_to_cart(request):
         request.session['cart'] = cart
         request.session.modified = True
 
-        messages.success(request, f'Товар "{product.name}" добавлен в корзину ({quantity} {product.get_unit_display()})')
+        # Форматируем количество для отображения
+        if product.unit == 'kg':
+            qty_display = f"{float(quantity):.3f}"
+        else:
+            qty_display = f"{int(quantity)}"
+        
+        messages.success(request, f'Товар "{product.name}" добавлен в корзину ({qty_display} {product.get_unit_display()})')
 
     return redirect('sale')
 
@@ -590,74 +626,152 @@ def receipt_pdf(request):
         return redirect('sale')
 
     buffer = BytesIO()
+    
+    # Создаем PDF документ с отступами для печати
     doc = SimpleDocTemplate(
         buffer,
         pagesize=A4,
-        rightMargin=20,
-        leftMargin=20,
-        topMargin=20,
-        bottomMargin=20
+        rightMargin=40,
+        leftMargin=40,
+        topMargin=40,
+        bottomMargin=40,
     )
-
-    font_path = settings.BASE_DIR / 'cash_app' / 'static' / 'cash_app' / 'fonts' / 'DejaVuSans.ttf'
-    regular_font = 'Helvetica'
-    bold_font = 'Helvetica-Bold'
-
-    if font_path.exists():
-        pdfmetrics.registerFont(TTFont('DejaVuSans', str(font_path)))
-        regular_font = 'DejaVuSans'
-        bold_font = 'DejaVuSans'
-
+    
+    # Используем встроенные шрифты reportlab
+    # Helvetica не поддерживает кириллицу, но мы будем использовать стандартный шрифт
+    # Для корректного отображения кириллицы используем стандартный шрифт с поддержкой Unicode
+    try:
+        # Пытаемся использовать шрифт, который поддерживает кириллицу в системе
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+        import platform
+        import os
+        
+        # Пытаемся найти системный шрифт с кириллицей
+        font_paths = []
+        
+        if platform.system() == 'Windows':
+            font_paths = [
+                'C:/Windows/Fonts/arial.ttf',
+                'C:/Windows/Fonts/times.ttf',
+                'C:/Windows/Fonts/calibri.ttf',
+            ]
+        elif platform.system() == 'Linux':
+            font_paths = [
+                '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
+                '/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf',
+                '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+            ]
+        elif platform.system() == 'Darwin':  # macOS
+            font_paths = [
+                '/System/Library/Fonts/Arial.ttf',
+                '/System/Library/Fonts/Times.ttf',
+            ]
+        
+        regular_font = 'Helvetica'
+        bold_font = 'Helvetica-Bold'
+        
+        # Пробуем загрузить найденный шрифт
+        for font_path in font_paths:
+            if os.path.exists(font_path):
+                try:
+                    pdfmetrics.registerFont(TTFont('CustomFont', font_path))
+                    regular_font = 'CustomFont'
+                    bold_font = 'CustomFont'
+                    break
+                except:
+                    continue
+                    
+    except:
+        regular_font = 'Helvetica'
+        bold_font = 'Helvetica-Bold'
+    
     styles = getSampleStyleSheet()
-    story = []
-
+    
+    # Стиль для заголовка
     title_style = ParagraphStyle(
         'CustomTitle',
         parent=styles['Heading1'],
         fontName=bold_font,
         fontSize=18,
-        alignment=1,
-        spaceAfter=12
+        alignment=1,  # Центр
+        spaceAfter=20,
+        textColor=colors.HexColor('#2c3e50')
     )
-
+    
+    # Стиль для информации
     info_style = ParagraphStyle(
         'Info',
         parent=styles['Normal'],
         fontName=regular_font,
         fontSize=10,
-        leading=12,
-        spaceAfter=4
+        leading=14,
+        spaceAfter=4,
+        alignment=0,  # Лево
     )
-
+    
+    # Стиль для текста в таблице
     table_text_style = ParagraphStyle(
         'TableText',
         parent=styles['Normal'],
         fontName=regular_font,
         fontSize=9,
-        leading=11
+        leading=12
     )
-
-    story.append(Paragraph("КАССОВЫЙ ЧЕК", title_style))
+    
+    # Стиль для заголовков таблицы
+    table_header_style = ParagraphStyle(
+        'TableHeader',
+        parent=styles['Normal'],
+        fontName=bold_font,
+        fontSize=9,
+        leading=12,
+        alignment=1  # Центр
+    )
+    
+    # Стиль для итогов
+    total_style = ParagraphStyle(
+        'Total',
+        parent=styles['Normal'],
+        fontName=bold_font,
+        fontSize=11,
+        leading=14,
+        alignment=2  # Право
+    )
+    
+    story = []
+    
+    # ========== ЗАГОЛОВОК ==========
+    story.append(Paragraph("KAССОВЫЙ ЧЕК", title_style))  # Используем латиницу для заголовка
+    story.append(Spacer(1, 10))
+    
+    # ========== ИНФОРМАЦИЯ О ПРОДАЖЕ ==========
     story.append(Paragraph(f"Дата: {receipt['date']}", info_style))
     story.append(Paragraph(f"Кассир: {receipt['cashier']}", info_style))
-
+    
     if receipt.get('coupon_code'):
         story.append(Paragraph(f"Купон: {receipt['coupon_code']}", info_style))
-
+    
     if receipt.get('payment_info'):
         payment_id = receipt['payment_info'].get('payment_id') or receipt.get('sale_group') or '—'
         story.append(Paragraph(f"ID платежа: {payment_id}", info_style))
-
-    story.append(Spacer(1, 10))
-
-    data = [[
-        Paragraph('<b>№</b>', table_text_style),
-        Paragraph('<b>Товар</b>', table_text_style),
-        Paragraph('<b>Кол-во</b>', table_text_style),
-        Paragraph('<b>Цена</b>', table_text_style),
-        Paragraph('<b>Сумма</b>', table_text_style),
-    ]]
-
+    
+    story.append(Spacer(1, 15))
+    
+    # ========== ТАБЛИЦА ТОВАРОВ ==========
+    # Заголовки таблицы на латинице
+    data = [
+        [
+            Paragraph("№", table_header_style),
+            Paragraph("Продукт", table_header_style),
+            Paragraph("Количество", table_header_style),
+            Paragraph("Цена", table_header_style),
+            Paragraph("Итого", table_header_style),
+        ]
+    ]
+    
+    # Товары - названия товаров могут быть на кириллице, но они отобразятся
+    # как есть (в PDF они будут видны, просто не будут выделены жирным)
     for i, item in enumerate(receipt['items'], 1):
         data.append([
             Paragraph(str(i), table_text_style),
@@ -666,56 +780,101 @@ def receipt_pdf(request):
             Paragraph(f"{item['price']:.2f} ₽", table_text_style),
             Paragraph(f"{item['total']:.2f} ₽", table_text_style),
         ])
-
+    
+    # Подвал таблицы
     data.append([
-        '',
-        '',
-        '',
-        Paragraph('<b>ПОДЫТОГ:</b>', table_text_style),
+        Paragraph("", table_text_style),
+        Paragraph("", table_text_style),
+        Paragraph("", table_text_style),
+        Paragraph("<b>ПОДИТОГ:</b>", table_text_style),
         Paragraph(f"<b>{receipt['subtotal']:.2f} ₽</b>", table_text_style),
     ])
-
+    
     if receipt.get('discount', 0) > 0:
         data.append([
-            '',
-            '',
-            '',
-            Paragraph('<b>СКИДКА:</b>', table_text_style),
+            Paragraph("", table_text_style),
+            Paragraph("", table_text_style),
+            Paragraph("", table_text_style),
+            Paragraph("<b>СКИДКА:</b>", table_text_style),
             Paragraph(f"<b>-{receipt['discount']:.2f} ₽</b>", table_text_style),
         ])
-
+    
     data.append([
-        '',
-        '',
-        '',
-        Paragraph('<b>ИТОГО:</b>', table_text_style),
+        Paragraph("", table_text_style),
+        Paragraph("", table_text_style),
+        Paragraph("", table_text_style),
+        Paragraph("<b>ИТОГО:</b>", table_text_style),
         Paragraph(f"<b>{receipt['total']:.2f} ₽</b>", table_text_style),
     ])
-
-    table = Table(data, colWidths=[20, 220, 70, 70, 80])
+    
+    # Создаем таблицу с правильными ширинами колонок
+    table = Table(data, colWidths=[30, 220, 70, 70, 80])
     table.setStyle(TableStyle([
+        # Шрифты
         ('FONTNAME', (0, 0), (-1, -1), regular_font),
+        # Заголовок
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e9ecef')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('ALIGN', (0, 0), (0, -1), 'CENTER'),
-        ('ALIGN', (2, 1), (-1, -1), 'RIGHT'),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#2c3e50')),
+        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), bold_font),
+        # Сетка
+        ('GRID', (0, 0), (-1, -4), 0.5, colors.HexColor('#dee2e6')),
+        ('GRID', (0, -3), (-1, -1), 0.5, colors.HexColor('#dee2e6')),
+        # Выравнивание
+        ('ALIGN', (0, 1), (0, -1), 'CENTER'),
+        ('ALIGN', (2, 1), (4, -1), 'RIGHT'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        # Отступы
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        # Итоговая строка
         ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#f8f9fa')),
+        ('FONTNAME', (0, -1), (-1, -1), bold_font),
     ]))
-
+    
     story.append(table)
-    story.append(Spacer(1, 12))
-    story.append(Paragraph("Спасибо за покупку!", info_style))
-
+    story.append(Spacer(1, 20))
+    
+    # ========== ПОДПИСЬ ==========
+    thanks_style = ParagraphStyle(
+        'Thanks',
+        parent=styles['Normal'],
+        fontName=regular_font,
+        fontSize=10,
+        alignment=1,
+        spaceAfter=5
+    )
+    
+    story.append(Paragraph("Спасибо Вам за покупку!", thanks_style))
+    story.append(Paragraph("Чек является фискальным документом", thanks_style))
+    
+    # ========== ДОПОЛНИТЕЛЬНАЯ ИНФОРМАЦИЯ ==========
+    story.append(Spacer(1, 15))
+    
+    footer_style = ParagraphStyle(
+        'Footer',
+        parent=styles['Normal'],
+        fontName=regular_font,
+        fontSize=8,
+        alignment=1,
+        textColor=colors.HexColor('#6c757d')
+    )
+    
+    story.append(Paragraph("Кассовая система", footer_style))
+    story.append(Paragraph(f"Чек сформирован: {timezone.now().strftime('%d.%m.%Y %H:%M')}", footer_style))
+    
+    # Строим документ
     doc.build(story)
-
+    
     pdf = buffer.getvalue()
     buffer.close()
-
+    
+    # Формируем имя файла
+    filename = f"receipt_{receipt['date'].replace(' ', '_').replace(':', '-')}.pdf"
+    
     response = HttpResponse(pdf, content_type='application/pdf')
-    filename = receipt["date"].replace(" ", "_").replace(":", "-")
-    response['Content-Disposition'] = f'attachment; filename="receipt_{filename}.pdf"'
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    
     return response
 
 
@@ -742,7 +901,6 @@ def dashboard_view(request):
         monthly_sales = sum(float(s.total_price or 0) for s in user_sales)
         
         # Количество продаж (уникальных групп продаж)
-        # Считаем количество уникальных sale_group
         unique_sales = user_sales.values('sale_group').distinct().count()
         
         # Средний чек - сумма всех продаж / количество чеков
@@ -786,19 +944,19 @@ def dashboard_view(request):
             )
             day_total = sum(float(s.total_price or 0) for s in day_sales)
             
-            daily_data.append(day_total)
+            daily_data.append(round(day_total, 2))
             labels.append(day)
         
         context = {
             'plan': plan,
-            'monthly_sales': monthly_sales,
+            'monthly_sales': round(monthly_sales, 2),
             'completion_percentage': plan.get_completion_percentage(),
-            'remaining_amount': plan.get_remaining_amount(),
-            'daily_average': plan.get_daily_average(),
-            'today_total': today_total,
-            'week_total': week_total,
-            'average_check': average_check,  # Добавляем правильный средний чек
-            'sales_count': unique_sales,    # Количество чеков
+            'remaining_amount': round(plan.get_remaining_amount(), 2),
+            'daily_average': round(plan.get_daily_average(), 2),
+            'today_total': round(today_total, 2),
+            'week_total': round(week_total, 2),
+            'average_check': round(average_check, 2),
+            'sales_count': unique_sales,
             'daily_data': json.dumps(daily_data),
             'labels': json.dumps(labels),
             'has_sales': any(d > 0 for d in daily_data),
@@ -865,45 +1023,43 @@ def dashboard_view(request):
             )
             day_total = sum(float(s.total_price or 0) for s in day_sales)
             
-            daily_data.append(day_total)
+            daily_data.append(round(day_total, 2))
             labels.append(day)
         
-        # В функции dashboard_view для администратора, в части top_products:
-
-        # Топ-3 товара за месяц с единицами измерения
+        # Топ-5 товаров за месяц с единицами измерения
         top_products = History.objects.filter(
             type='sale',
             date__gte=start_of_month
         ).values(
-            'product__name', 
-            'product__unit'  # Добавляем единицу измерения
+            'product__name',
+            'product__unit'
         ).annotate(
             total=Sum('total_price'),
             quantity=Sum('quantity')
         ).order_by('-total')[:5]
-
-        # Преобразуем в список для удобства
+        
+        # Преобразуем в список для удобства использования в шаблоне
         top_products_list = []
         for p in top_products:
             top_products_list.append({
-                'product__name': p['product__name'],
-                'product__unit': p['product__unit'],
-                'total': p['total'],
-                'quantity': p['quantity']
+                'name': p['product__name'] or 'Товар',
+                'unit': p['product__unit'],
+                'total': float(p['total']),
+                'quantity': float(p['quantity'])
             })
         
         context = {
-            'total_monthly_sales': float(total_monthly_sales),
-            'total_yearly_sales': float(total_yearly_sales),
+            'total_monthly_sales': round(float(total_monthly_sales), 2),
+            'total_yearly_sales': round(float(total_yearly_sales), 2),
             'sales_count': sales_count,
-            'average_check': average_check,
+            'average_check': round(average_check, 2),
             'users_with_plans': users_with_plans,
             'total_plans': total_plans,
             'half_completed': half_completed,
             'over_completed': over_completed,
             'daily_data': json.dumps(daily_data),
             'labels': json.dumps(labels),
-            'top_products': top_products,
+            'top_products': top_products_list,
             'has_sales': any(d > 0 for d in daily_data),
             'is_admin': True,
         }
@@ -1238,8 +1394,10 @@ def process_qr_action(request):
         quantity_str = request.POST.get('quantity', '1')
         action = request.POST.get('action')
 
+        # Получаем товар
         product = get_object_or_404(Product, pk=product_id)
 
+        # Преобразуем и проверяем количество
         try:
             quantity = parse_decimal_quantity(quantity_str)
             validate_quantity_for_product(product, quantity)
@@ -1247,53 +1405,84 @@ def process_qr_action(request):
             messages.error(request, str(e))
             return redirect('scan_qr')
 
+        # Обработка для добавления в корзину (продажа)
         if action == 'add_to_cart':
+            # Проверка наличия на складе
             if product.quantity < quantity:
                 messages.error(request, f'Недостаточно товара "{product.name}" на складе')
                 return redirect('sale')
-
+            
+            # Проверка на просрочку
             if product.expiration_date < date.today():
                 messages.error(request, f'Товар "{product.name}" просрочен и не может быть продан')
                 return redirect('sale')
-
+            
+            # Получаем текущую корзину
             cart = request.session.get('cart', {})
             product_id_str = str(product.id)
-
-            current_quantity = Decimal(str(cart.get(product_id_str, {}).get('quantity', 0)))
+            
+            # Получаем текущее количество товара в корзине
+            current_quantity = Decimal('0.00')
+            if product_id_str in cart:
+                try:
+                    current_quantity = parse_decimal_quantity(cart[product_id_str]['quantity'])
+                except (KeyError, ValueError):
+                    current_quantity = Decimal('0.00')
+            
+            # Вычисляем новое количество
             new_quantity = current_quantity + quantity
-
+            
+            # Проверяем, что новое количество не превышает остаток на складе
             if new_quantity > product.quantity:
-                messages.error(request, f'Нельзя добавить больше, чем есть на складе')
+                messages.error(request, f'Нельзя добавить больше, чем есть на складе (доступно: {product.quantity} {product.get_unit_display()})')
                 return redirect('sale')
-
+            
+            # Сохраняем в корзину
             cart[product_id_str] = {
                 'quantity': float(new_quantity) if product.unit == 'kg' else int(new_quantity),
                 'price': str(product.price),
-                'unit': product.unit
+                'unit': product.unit,
             }
-
+            
             request.session['cart'] = cart
             request.session.modified = True
-
-            qty_display = f"{float(quantity):.3f}" if product.unit == 'kg' else f"{int(quantity)}"
+            
+            # Форматируем количество для отображения
+            if product.unit == 'kg':
+                qty_display = f"{float(quantity):.3f}"
+            else:
+                qty_display = f"{int(quantity)}"
+            
             messages.success(request, f'Товар "{product.name}" добавлен в корзину ({qty_display} {product.get_unit_display()})')
             return redirect('sale')
-
+        
+        # Обработка для поступления товара
         elif action == 'receipt':
+            # Увеличиваем количество на складе
             product.quantity += quantity
             product.save()
-
+            
+            # Создаем запись в истории
             History.objects.create(
                 type='receipt',
                 product=product,
                 quantity=quantity,
                 user=request.user
             )
-
-            qty_display = f"{float(quantity):.3f}" if product.unit == 'kg' else f"{int(quantity)}"
+            
+            # Форматируем количество для отображения
+            if product.unit == 'kg':
+                qty_display = f"{float(quantity):.3f}"
+            else:
+                qty_display = f"{int(quantity)}"
+            
             messages.success(request, f'Поступление товара "{product.name}" оформлено. Добавлено {qty_display} {product.get_unit_display()}')
             return redirect('product_list')
-
+        
+        else:
+            messages.error(request, 'Неизвестное действие')
+            return redirect('scan_qr')
+    
     return redirect('scan_qr')
 
 
