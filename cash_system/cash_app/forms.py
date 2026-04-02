@@ -10,7 +10,7 @@ class LoginForm(AuthenticationForm):
     """Форма входа"""
     username = forms.CharField(
         label='Имя пользователя',
-        widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Введите имя'})
+        widget=forms.TextInput(attrs={'class':'form-control', 'placeholder': 'Введите имя'})
     )
     password = forms.CharField(
         label='Пароль',
@@ -20,14 +20,15 @@ class LoginForm(AuthenticationForm):
 
 class ProductForm(forms.ModelForm):
     """Форма для товара"""
-
+    
     class Meta:
         model = Product
-        fields = ['name', 'category', 'quantity', 'price', 'unit', 'expiration_date']
+        # Убираем поле quantity, так как теперь количество хранится в StoreProduct
+        fields = ['name', 'category', 'base_price', 'price', 'unit', 'expiration_date']
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Название товара'}),
             'category': forms.Select(attrs={'class': 'form-control'}),
-            'quantity': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.001', 'min': '0'}),
+            'base_price': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0'}),
             'price': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0'}),
             'unit': forms.Select(attrs={'class': 'form-control'}),
             'expiration_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
@@ -35,27 +36,11 @@ class ProductForm(forms.ModelForm):
         labels = {
             'name': 'Название',
             'category': 'Категория',
-            'quantity': 'Количество',
-            'price': 'Цена',
+            'base_price': 'Базовая цена (для расчета в прайс-листах)',
+            'price': 'Цена продажи (обычный прайс)',
             'unit': 'Единица измерения',
             'expiration_date': 'Срок годности',
         }
-
-    def clean(self):
-        cleaned_data = super().clean()
-        unit = cleaned_data.get('unit')
-        quantity = cleaned_data.get('quantity')
-
-        if quantity is None:
-            return cleaned_data
-
-        if unit == 'pcs' and quantity != quantity.to_integral_value():
-            self.add_error('quantity', 'Для штучного товара количество должно быть целым числом.')
-
-        if quantity < 0:
-            self.add_error('quantity', 'Количество не может быть отрицательным.')
-
-        return cleaned_data
 
 
 class DisposalForm(forms.Form):

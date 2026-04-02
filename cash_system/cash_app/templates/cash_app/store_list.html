@@ -1,0 +1,69 @@
+{% extends 'cash_app/base.html' %}
+{% load static %}
+
+{% block title %} - Управление складами{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="bi bi-shop"></i> Управление складами</h1>
+    <a href="{% url 'store_create' %}" class="btn btn-success">
+        <i class="bi bi-plus-lg"></i> Добавить склад
+    </a>
+</div>
+
+<div class="card shadow">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead class="table-light">
+                    <tr>
+                        <th>Название</th>
+                        <th>Адрес</th>
+                        <th>Город</th>
+                        <th>Телефон</th>
+                        <th>Статус</th>
+                        <th>Дата создания</th>
+                        <th>Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for store in stores %}
+                    <tr>
+                        <td><strong>{{ store.name }}</strong></td>
+                        <td>{{ store.address }}</td>
+                        <td>{{ store.city|default:"—" }}</td>
+                        <td>{{ store.phone|default:"—" }}</td>
+                        <td>
+                            {% if store.is_active %}
+                                <span class="badge bg-success">Активен</span>
+                            {% else %}
+                                <span class="badge bg-danger">Неактивен</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ store.created_at|date:"d.m.Y" }}</td>
+                        <td>
+                            <a href="{% url 'store_edit' store.id %}" class="btn btn-sm btn-primary" title="Редактировать">
+                                <i class="bi bi-pencil"></i>
+                            </a>
+                            <a href="{% url 'store_delete' store.id %}" class="btn btn-sm btn-danger" title="Удалить">
+                                <i class="bi bi-trash"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="text-center py-4">
+                            <i class="bi bi-shop fs-1 d-block text-muted"></i>
+                            <p class="text-muted">Нет созданных складов</p>
+                            <a href="{% url 'store_create' %}" class="btn btn-primary">
+                                <i class="bi bi-plus-lg"></i> Добавить первый склад
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

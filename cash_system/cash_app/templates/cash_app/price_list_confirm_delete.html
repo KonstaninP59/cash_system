@@ -1,0 +1,42 @@
+{% extends 'cash_app/base.html' %}
+{% load static %}
+
+{% block title %} - Удаление прайс-листа{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card shadow border-danger">
+            <div class="card-header bg-danger text-white">
+                <h4 class="mb-0"><i class="bi bi-exclamation-triangle"></i> Подтверждение удаления</h4>
+            </div>
+            <div class="card-body">
+                <p class="fs-5">Вы уверены, что хотите удалить прайс-лист <strong>"{{ price_list.name }}"</strong>?</p>
+                
+                <div class="alert alert-warning">
+                    <i class="bi bi-info-circle"></i>
+                    Множитель: <strong>x{{ price_list.multiplier }}</strong><br>
+                    Товаров в прайс-листе: <strong>{{ price_list.items.count }}</strong>
+                </div>
+                
+                <p class="text-danger">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                    Внимание! Это действие невозможно отменить. Все настройки цен для этого прайс-листа будут удалены.
+                </p>
+                
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="d-flex justify-content-between">
+                        <a href="{% url 'price_list_list' %}" class="btn btn-secondary">
+                            <i class="bi bi-x-lg"></i> Отмена
+                        </a>
+                        <button type="submit" class="btn btn-danger">
+                            <i class="bi bi-trash"></i> Удалить
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -8,6 +8,8 @@ from django.contrib.auth.models import User
 from django.core.files.base import ContentFile
 from django.db import models
 from django.db.models import Sum
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 from django.utils import timezone
 
 
@@ -26,8 +28,27 @@ class Category(models.Model):
         return self.name
 
 
+class StoreAddress(models.Model):
+    """Модель адреса склада (магазина)"""
+    name = models.CharField('Название', max_length=100)
+    address = models.TextField('Адрес')
+    city = models.CharField('Город', max_length=100, blank=True)
+    phone = models.CharField('Телефон', max_length=20, blank=True)
+    is_active = models.BooleanField('Активен', default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = 'Адрес склада'
+        verbose_name_plural = 'Адреса складов'
+        ordering = ['name']
+    
+    def __str__(self):
+        return self.name
+
+
 class Product(models.Model):
-    """Модель товара"""
+    """Модель товара (без количества - количество хранится в StoreProduct)"""
     UNIT_CHOICES = [
         ('pcs', 'шт'),
         ('kg', 'кг'),
@@ -44,8 +65,8 @@ class Product(models.Model):
         verbose_name='Категория',
         related_name='products'
     )
-    quantity = models.DecimalField('Количество', max_digits=10, decimal_places=3, default=0)
-    price = models.DecimalField('Цена', max_digits=10, decimal_places=2)
+    base_price = models.DecimalField('Базовая цена', max_digits=10, decimal_places=2, default=0)
+    price = models.DecimalField('Цена продажи', max_digits=10, decimal_places=2)
     unit = models.CharField('Единица измерения', max_length=3, choices=UNIT_CHOICES, default='pcs')
     expiration_date = models.DateField('Срок годности')
     created_at = models.DateTimeField('Дата создания', auto_now_add=True)
@@ -62,8 +83,8 @@ class Product(models.Model):
     def save(self, *args, **kwargs):
         qr_missing_before_save = not bool(self.qr_code)
         super().save(*args, **kwargs)
-
-        # Генерируем QR после первого сохранения, когда уже есть self.pk
+        
+        # Генерируем QR после первого сохранения
         if qr_missing_before_save and not self.qr_code:
             self.generate_qr_code()
             super().save(update_fields=['qr_code'])
@@ -71,7 +92,7 @@ class Product(models.Model):
     def generate_qr_code(self):
         """Генерация QR-кода для товара"""
         qr_data = f"product:{self.qr_uuid}"
-
+        
         qr = qrcode.QRCode(
             version=1,
             error_correction=qrcode.constants.ERROR_CORRECT_L,
@@ -80,9 +101,9 @@ class Product(models.Model):
         )
         qr.add_data(qr_data)
         qr.make(fit=True)
-
+        
         img = qr.make_image(fill_color="black", back_color="white")
-
+        
         buffer = BytesIO()
         img.save(buffer, format='PNG')
         filename = f'qr_{self.pk}_{self.qr_uuid}.png'
@@ -106,6 +127,65 @@ class Product(models.Model):
 
     def get_qr_url(self):
         return self.qr_code.url if self.qr_code else None
+
+
+class StoreProduct(models.Model):
+    """Модель товара на конкретном складе"""
+    store = models.ForeignKey(StoreAddress, on_delete=models.CASCADE, related_name='store_products', verbose_name='Склад')
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='store_products', verbose_name='Товар')
+    quantity = models.DecimalField('Количество', max_digits=10, decimal_places=3, default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = 'Товар на складе'
+        verbose_name_plural = 'Товары на складах'
+        unique_together = ['store', 'product']
+    
+    def __str__(self):
+        return f"{self.store.name} - {self.product.name}: {self.quantity}"
+
+
+# Сигнал для автоматического создания записей о товарах на всех складах
+@receiver(post_save, sender=Product)
+def create_store_products(sender, instance, created, **kwargs):
+    """При создании нового товара добавляем его на все активные склады с нулевым остатком"""
+    if created:
+        stores = StoreAddress.objects.filter(is_active=True)
+        for store in stores:
+            StoreProduct.objects.get_or_create(
+                store=store,
+                product=instance,
+                defaults={'quantity': 0}
+            )
+
+
+@receiver(post_save, sender=StoreAddress)
+def create_products_for_new_store(sender, instance, created, **kwargs):
+    """При создании нового склада добавляем на него все существующие товары"""
+    if created:
+        products = Product.objects.all()
+        for product in products:
+            StoreProduct.objects.get_or_create(
+                store=instance,
+                product=product,
+                defaults={'quantity': 0}
+            )
+
+
+class UserProfile(models.Model):
+    """Профиль пользователя"""
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile', verbose_name='Пользователь')
+    store = models.ForeignKey(StoreAddress, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Привязанный склад')
+    position = models.CharField('Должность', max_length=100, blank=True, default='Кассир')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = 'Профиль пользователя'
+        verbose_name_plural = 'Профили пользователей'
+    
+    def __str__(self):
+        return f"{self.user.username} - {self.store.name if self.store else 'Не привязан'}"
 
 
 class Coupon(models.Model):
@@ -132,18 +212,13 @@ class Coupon(models.Model):
     def is_valid(self):
         if not self.is_active:
             return False
-
         now = timezone.now()
-
         if self.valid_from and now < self.valid_from:
             return False
-
         if self.valid_until and now > self.valid_until:
             return False
-
         if self.max_uses is not None and self.used_count >= self.max_uses:
             return False
-
         return True
 
     def apply_discount(self, total):
@@ -163,6 +238,7 @@ class History(models.Model):
 
     type = models.CharField('Тип операции', max_length=20, choices=TYPE_CHOICES)
     product = models.ForeignKey(Product, on_delete=models.PROTECT, verbose_name='Товар')
+    store = models.ForeignKey(StoreAddress, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Склад')
     quantity = models.DecimalField('Количество', max_digits=10, decimal_places=3)
     total_price = models.DecimalField('Сумма', max_digits=10, decimal_places=2, null=True, blank=True)
     reason = models.CharField('Причина', max_length=200, blank=True, null=True)
@@ -239,3 +315,45 @@ class SalesPlan(models.Model):
         if days_passed <= 0:
             return 0
         return round(float(current / days_passed), 2)
+
+
+class PriceList(models.Model):
+    """Модель прайс-листа (ценовой категории)"""
+    name = models.CharField('Название', max_length=100)
+    description = models.TextField('Описание', blank=True)
+    multiplier = models.DecimalField('Множитель цены', max_digits=5, decimal_places=2, default=1.00)
+    is_active = models.BooleanField('Активен', default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = 'Прайс-лист'
+        verbose_name_plural = 'Прайс-листы'
+        ordering = ['name']
+    
+    def __str__(self):
+        return f"{self.name} (x{self.multiplier})"
+
+
+class PriceListItem(models.Model):
+    """Модель товара в прайс-листе"""
+    price_list = models.ForeignKey(PriceList, on_delete=models.CASCADE, related_name='items', verbose_name='Прайс-лист')
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='price_list_items', verbose_name='Товар')
+    custom_price = models.DecimalField('Своя цена', max_digits=10, decimal_places=2, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = 'Товар в прайс-листе'
+        verbose_name_plural = 'Товары в прайс-листах'
+        unique_together = ['price_list', 'product']
+    
+    def __str__(self):
+        return f"{self.price_list.name} - {self.product.name}"
+    
+    def get_price(self):
+        """Получить цену товара в этом прайс-листе"""
+        if self.custom_price is not None:
+            return self.custom_price
+        return self.product.base_price * self.price_list.multiplier
+    

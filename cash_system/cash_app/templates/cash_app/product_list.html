@@ -31,10 +31,10 @@
         <div class="metric-title">Всего товаров</div>
         <div class="metric-value">{{ total_products }}</div>
         <div class="metric-note">
-            {% if current_filter == 'all' %}
-                Активный режим просмотра
+            {% if selected_store %}
+                на складе "{{ selected_store.name }}"
             {% else %}
-                Показать все товары
+                на всех складах
             {% endif %}
         </div>
     </a>
@@ -145,9 +145,9 @@
 
                         <td class="fw-medium">
                             {% if product.unit == 'kg' %}
-                                {{ product.quantity|floatformat:3 }}
+                                {{ product.current_quantity|floatformat:3 }}
                             {% else %}
-                                {{ product.quantity|floatformat:0 }}
+                                {{ product.current_quantity|floatformat:0 }}
                             {% endif %}
                         </td>
 
@@ -179,7 +179,7 @@
                                     <i class="bi bi-pencil"></i>
                                 </a>
 
-                                {% if product.is_expired and product.quantity > 0 %}
+                                {% if product.is_expired and product.current_quantity > 0 %}
                                     <a href="{% url 'product_disposal' product.pk %}"
                                        class="btn btn-outline-warning"
                                        title="Списать">

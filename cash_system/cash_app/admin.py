@@ -3,7 +3,7 @@ from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.models import User
 from django.utils.html import format_html
 
-from .models import Category, Coupon, History, Product, SalesPlan
+from .models import Category, Coupon, History, Product, SalesPlan, PriceList, PriceListItem, StoreAddress, StoreProduct, UserProfile
 
 
 class CategoryAdmin(admin.ModelAdmin):
@@ -12,10 +12,24 @@ class CategoryAdmin(admin.ModelAdmin):
 
 
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ['name', 'category', 'quantity', 'price', 'unit', 'expiration_date', 'get_status', 'has_qr']
+    # Убираем quantity из list_display (теперь количество хранится в StoreProduct)
+    list_display = ['name', 'category', 'base_price', 'price', 'unit', 'expiration_date', 'get_status', 'has_qr']
     list_filter = ['category', 'expiration_date', 'unit']
     search_fields = ['name']
     readonly_fields = ['qr_uuid', 'qr_code_preview']
+    
+    fieldsets = (
+        (None, {
+            'fields': ('name', 'category', 'unit', 'expiration_date')
+        }),
+        ('Цены', {
+            'fields': ('base_price', 'price')
+        }),
+        ('QR-код', {
+            'fields': ('qr_code', 'qr_uuid', 'qr_code_preview'),
+            'classes': ('collapse',)
+        }),
+    )
 
     def get_status(self, obj):
         if obj.is_expired():
@@ -41,6 +55,40 @@ class ProductAdmin(admin.ModelAdmin):
         if not obj.qr_code:
             obj.generate_qr_code()
             obj.save(update_fields=['qr_code'])
+
+
+class PriceListItemInline(admin.TabularInline):
+    model = PriceListItem
+    extra = 1
+    fields = ['product', 'custom_price']
+    autocomplete_fields = ['product']
+
+
+class PriceListAdmin(admin.ModelAdmin):
+    list_display = ['name', 'multiplier', 'is_active', 'created_at']
+    list_filter = ['is_active']
+    search_fields = ['name']
+    inlines = [PriceListItemInline]
+
+
+class StoreProductInline(admin.TabularInline):
+    model = StoreProduct
+    extra = 1
+    fields = ['product', 'quantity']
+    autocomplete_fields = ['product']
+
+
+class StoreAddressAdmin(admin.ModelAdmin):
+    list_display = ['name', 'address', 'city', 'phone', 'is_active', 'created_at']
+    list_filter = ['is_active', 'city']
+    search_fields = ['name', 'address', 'city']
+    inlines = [StoreProductInline]
+
+
+class UserProfileInline(admin.StackedInline):
+    model = UserProfile
+    can_delete = False
+    verbose_name_plural = 'Профиль'
 
 
 class CouponAdmin(admin.ModelAdmin):
@@ -90,16 +138,27 @@ class SalesPlanAdmin(admin.ModelAdmin):
 
 
 class CustomUserAdmin(UserAdmin):
-    list_display = ['username', 'email', 'first_name', 'last_name', 'is_staff', 'is_active', 'date_joined']
+    list_display = ['username', 'email', 'first_name', 'last_name', 'is_staff', 'is_active', 'get_store', 'date_joined']
     list_filter = ['is_staff', 'is_superuser', 'is_active']
     search_fields = ['username', 'email', 'first_name', 'last_name']
+    inlines = [UserProfileInline]
+    
+    def get_store(self, obj):
+        if hasattr(obj, 'profile') and obj.profile.store:
+            return obj.profile.store.name
+        return '—'
+    get_store.short_description = 'Склад'
 
 
+# Регистрация моделей
 admin.site.register(Category, CategoryAdmin)
 admin.site.register(Product, ProductAdmin)
 admin.site.register(Coupon, CouponAdmin)
 admin.site.register(History, HistoryAdmin)
 admin.site.register(SalesPlan, SalesPlanAdmin)
+admin.site.register(PriceList, PriceListAdmin)
+admin.site.register(StoreAddress, StoreAddressAdmin)
 
+# Перерегистрация User
 admin.site.unregister(User)
 admin.site.register(User, CustomUserAdmin)

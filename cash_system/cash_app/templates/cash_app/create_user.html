@@ -1,0 +1,62 @@
+{% extends 'cash_app/base.html' %}
+{% load static %}
+
+{% block title %} - Создание сотрудника{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0"><i class="bi bi-person-plus"></i> {{ title }}</h4>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+                    
+                    <div class="mb-3">
+                        <label for="username" class="form-label">Логин</label>
+                        <input type="text" class="form-control" id="username" name="username" required>
+                        <small class="text-muted">Имя пользователя для входа в систему</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="password" class="form-label">Пароль</label>
+                        <input type="password" class="form-control" id="password" name="password" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="password2" class="form-label">Подтверждение пароля</label>
+                        <input type="password" class="form-control" id="password2" name="password2" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="store_id" class="form-label">Привязанный склад</label>
+                        <select class="form-select" id="store_id" name="store_id" required>
+                            <option value="">-- Выберите склад --</option>
+                            {% for store in stores %}
+                                <option value="{{ store.id }}">{{ store.name }} ({{ store.address }})</option>
+                            {% endfor %}
+                        </select>
+                        <small class="text-muted">Сотрудник будет видеть только товары этого склада</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="position" class="form-label">Должность</label>
+                        <input type="text" class="form-control" id="position" name="position" value="Кассир">
+                    </div>
+                    
+                    <div class="d-flex justify-content-between">
+                        <a href="{% url 'user_list' %}" class="btn btn-secondary">
+                            <i class="bi bi-arrow-left"></i> Назад
+                        </a>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-lg"></i> Создать
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

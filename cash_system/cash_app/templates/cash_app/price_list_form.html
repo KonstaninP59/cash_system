@@ -1,0 +1,167 @@
+{% extends 'cash_app/base.html' %}
+{% load static %}
+
+{% block title %} - {{ title }}{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0"><i class="bi bi-tags"></i> {{ title }}</h4>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="name" class="form-label">Название прайс-листа</label>
+                                <input type="text" class="form-control" id="name" name="name" 
+                                       value="{{ price_list.name|default:'' }}" required>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="mb-3">
+                                <label for="multiplier" class="form-label">Множитель цены</label>
+                                <input type="number" class="form-control" id="multiplier" name="multiplier" 
+                                       step="0.01" min="0" value="{{ price_list.multiplier|default:'1.00' }}">
+                                <small class="text-muted">Базовые цены будут умножены на этот коэффициент</small>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="mb-3">
+                                <label for="is_active" class="form-label">Статус</label>
+                                <div class="form-check mt-2">
+                                    <input type="checkbox" class="form-check-input" id="is_active" name="is_active" 
+                                           {% if price_list.is_active %}checked{% endif %}>
+                                    <label class="form-check-label" for="is_active">Активен</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="description" class="form-label">Описание</label>
+                        <textarea class="form-control" id="description" name="description" rows="2">{{ price_list.description|default:'' }}</textarea>
+                    </div>
+                    
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle"></i>
+                        <strong>Важно:</strong> Если для товара указана своя цена, она будет использоваться вместо рассчитанной.
+                        Если своя цена не указана, используется базовая цена товара, умноженная на множитель.
+                    </div>
+                    
+                    <hr>
+                    
+                    <h5 class="mb-3"><i class="bi bi-box"></i> Товары в прайс-листе</h5>
+                    
+                    <div class="table-responsive">
+                        <table class="table table-hover" id="products-table">
+                            <thead class="table-light">
+                                <tr>
+                                    <th><input type="checkbox" id="select-all"></th>
+                                    <th>Товар</th>
+                                    <th>Категория</th>
+                                    <th>Базовая цена</th>
+                                    <th>Своя цена</th>
+                                    <th>Итоговая цена</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for product in products %}
+                                <tr>
+                                    <td>
+                                        <input type="checkbox" class="product-checkbox" name="product_ids" value="{{ product.id }}"
+                                               {% if product.id in existing_items.keys %}checked{% endif %}>
+                                    </td>
+                                    <td>{{ product.name }}</td>
+                                    <td>{{ product.category.name|default:"—" }}</td>
+                                    <td>{{ product.base_price|floatformat:2 }} ₽</td>
+                                    <td>
+                                        <input type="number" class="form-control form-control-sm custom-price" 
+                                               name="custom_prices" 
+                                               step="0.01" min="0"
+                                               style="width: 120px;"
+                                               value="{% if product.id in existing_items.keys %}{{ existing_items.product_id.custom_price|default:'' }}{% endif %}">
+                                    </td>
+                                    <td class="calculated-price">—</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div class="d-flex justify-content-between mt-3">
+                        <a href="{% url 'price_list_list' %}" class="btn btn-secondary">
+                            <i class="bi bi-arrow-left"></i> Назад
+                        </a>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-lg"></i> Сохранить
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Выделить все товары
+    const selectAll = document.getElementById('select-all');
+    const checkboxes = document.querySelectorAll('.product-checkbox');
+    
+    if (selectAll) {
+        selectAll.addEventListener('change', function() {
+            checkboxes.forEach(cb => cb.checked = selectAll.checked);
+            updateCalculatedPrices();
+        });
+    }
+    
+    checkboxes.forEach(cb => {
+        cb.addEventListener('change', updateCalculatedPrices);
+    });
+    
+    // Обновление рассчитанных цен
+    function updateCalculatedPrices() {
+        const multiplier = parseFloat(document.getElementById('multiplier').value) || 1.0;
+        const rows = document.querySelectorAll('#products-table tbody tr');
+        
+        rows.forEach(row => {
+            const checkbox = row.querySelector('.product-checkbox');
+            const basePrice = parseFloat(row.cells[3].innerText) || 0;
+            const customPriceInput = row.querySelector('.custom-price');
+            const calculatedCell = row.querySelector('.calculated-price');
+            
+            if (checkbox && checkbox.checked) {
+                let finalPrice;
+                if (customPriceInput && customPriceInput.value) {
+                    finalPrice = parseFloat(customPriceInput.value);
+                } else {
+                    finalPrice = basePrice * multiplier;
+                }
+                calculatedCell.innerHTML = finalPrice.toFixed(2) + ' ₽';
+            } else {
+                calculatedCell.innerHTML = '—';
+            }
+        });
+    }
+    
+    // Обработчик изменения множителя
+    const multiplierInput = document.getElementById('multiplier');
+    if (multiplierInput) {
+        multiplierInput.addEventListener('input', updateCalculatedPrices);
+    }
+    
+    // Обработчик изменения своей цены
+    document.querySelectorAll('.custom-price').forEach(input => {
+        input.addEventListener('input', updateCalculatedPrices);
+    });
+    
+    // Инициализация
+    updateCalculatedPrices();
+});
+</script>
+{% endblock %}

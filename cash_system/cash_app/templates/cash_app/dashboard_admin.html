@@ -43,7 +43,7 @@
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-start">
                     <div>
-                        <h6 class="card-title text-white-50 mb-2">Количество продаж</h6>
+                        <h6 class="card-title text-white-50 mb-2">Количество чеков</h6>
                         <h2 class="mb-0 fw-bold">{{ sales_count }}</h2>
                         <small class="text-white-50">за текущий месяц</small>
                     </div>
@@ -58,9 +58,9 @@
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-start">
                     <div>
-                        <h6 class="card-title text-dark-50 mb-2">Активных планов</h6>
+                        <h6 class="card-title text-dark-50 mb-2">Всего планов</h6>
                         <h2 class="mb-0 fw-bold">{{ total_plans }}</h2>
-                        <small class="text-dark-50">всего планов продаж</small>
+                        <small class="text-dark-50">активных планов продаж</small>
                     </div>
                     <i class="bi bi-people fs-1 text-dark-50"></i>
                 </div>
@@ -87,10 +87,9 @@
     </div>
 </div>
 
-<!-- Топ товаров и планы продаж -->
+<!-- Топ товаров и статистика планов -->
 <div class="row">
     <!-- Топ товаров -->
-<!-- Топ товаров -->
     <div class="col-md-5 mb-4">
         <div class="card shadow h-100">
             <div class="card-header bg-success text-white">
@@ -104,7 +103,7 @@
                         <div class="d-flex align-items-center">
                             <span class="badge bg-secondary rounded-circle me-3" style="width: 28px; height: 28px; line-height: 28px;">{{ forloop.counter }}</span>
                             <div>
-                                <strong>{{ product.product__name|default:"Товар" }}</strong>
+                                <strong>{{ product.name|default:"Товар" }}</strong>
                                 <div class="small text-muted">
                                     <i class="bi bi-{% if product.unit == 'kg' %}scale{% else %}box{% endif %}"></i>
                                     {% if product.unit == 'kg' %}
@@ -129,14 +128,15 @@
         </div>
     </div>
     
-    <!-- Краткая статистика по планам -->
+    <!-- Статистика выполнения планов и управление -->
     <div class="col-md-7 mb-4">
         <div class="card shadow h-100">
-            <div class="card-header bg-info text-white">
-                <h5 class="mb-0"><i class="bi bi-people"></i> Статистика выполнения планов</h5>
+            <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-people"></i> Статистика выполнения планов продаж</h5>
             </div>
             <div class="card-body">
-                <div class="row text-center">
+                <!-- Краткая статистика -->
+                <div class="row text-center mb-4">
                     <div class="col-4">
                         <div class="bg-light rounded p-3">
                             <h3 class="mb-0 text-primary">{{ total_plans }}</h3>
@@ -157,94 +157,79 @@
                     </div>
                 </div>
                 
-                <hr>
-                
-                <div class="text-center">
-                    <a href="#plans-table" class="btn btn-outline-primary" data-bs-toggle="collapse">
-                        <i class="bi bi-table"></i> Показать все планы
-                    </a>
+                <!-- Таблица всех планов -->
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Пользователь</th>
+                                <th>План (₽)</th>
+                                <th>Продажи (₽)</th>
+                                <th>Выполнение</th>
+                                <th>Обновлен</th>
+                                <th>Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for plan in users_with_plans %}
+                            <tr>
+                                <td>
+                                    <strong>{{ plan.user.username }}</strong>
+                                    {% if plan.user.first_name %}
+                                        <br><small class="text-muted">{{ plan.user.first_name }}</small>
+                                    {% endif %}
+                                </td>
+                                <td>{{ plan.monthly_target|floatformat:0 }}</td>
+                                <td>{{ plan.get_current_month_sales|floatformat:0 }}</td>
+                                <td style="min-width: 150px;">
+                                    <div class="progress" style="height: 20px;">
+                                        <div class="progress-bar 
+                                            {% if plan.get_completion_percentage >= 100 %}bg-success
+                                            {% elif plan.get_completion_percentage >= 75 %}bg-info
+                                            {% elif plan.get_completion_percentage >= 50 %}bg-warning
+                                            {% else %}bg-danger{% endif %}"
+                                            role="progressbar"
+                                            style="width: {% widthratio plan.get_completion_percentage 1 1 %}%;"
+                                            aria-valuenow="{{ plan.get_completion_percentage }}"
+                                            aria-valuemin="0"
+                                            aria-valuemax="100">
+                                            {{ plan.get_completion_percentage }}%
+                                        </div>
+                                    </div>
+                                    {% if plan.get_completion_percentage > 100 %}
+                                        <span class="badge bg-success mt-1">Перевыполнение!</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <small>{{ plan.updated_at|date:"d.m.Y" }}</small>
+                                    <br><small class="text-muted">{{ plan.updated_by.username|default:"—" }}</small>
+                                </td>
+                                <td>
+                                    <div class="btn-group btn-group-sm">
+                                        <a href="{% url 'plan_edit' plan.user.id %}" class="btn btn-primary" title="Редактировать план">
+                                            <i class="bi bi-pencil"></i>
+                                        </a>
+                                        <a href="{% url 'user_sales_detail' plan.user.id %}" class="btn btn-info" title="Детали продаж">
+                                            <i class="bi bi-eye"></i>
+                                        </a>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="6" class="text-center py-4">
+                                    <i class="bi bi-table fs-1 d-block text-muted mb-3"></i>
+                                    <p class="text-muted">Нет созданных планов</p>
+                                    <a href="/admin/cash_app/salesplan/add/" class="btn btn-success">
+                                        <i class="bi bi-plus-lg"></i> Создать первый план
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
                 </div>
             </div>
-        </div>
-    </div>
-</div>
-
-<!-- Таблица всех планов (скрыта по умолчанию) -->
-<div class="card shadow collapse" id="plans-table">
-    <div class="card-header bg-info text-white">
-        <h5 class="mb-0"><i class="bi bi-table"></i> Управление планами продаж</h5>
-    </div>
-    <div class="card-body">
-        <div class="table-responsive">
-            <table class="table table-hover">
-                <thead>
-                    <tr>
-                        <th>Пользователь</th>
-                        <th>План</th>
-                        <th>Продажи</th>
-                        <th>Выполнение</th>
-                        <th>Обновлен</th>
-                        <th>Действия</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for plan in users_with_plans %}
-                    <tr>
-                        <td>
-                            <strong>{{ plan.user.username }}</strong>
-                            {% if plan.user.first_name %}
-                                <br><small class="text-muted">{{ plan.user.first_name }}</small>
-                            {% endif %}
-                        </td>
-                        <td>{{ plan.monthly_target|floatformat:0 }} ₽</td>
-                        <td>{{ plan.get_current_month_sales|floatformat:0 }} ₽</td>
-                        <td style="min-width: 150px;">
-                            <div class="progress" style="height: 20px;">
-                                <div class="progress-bar 
-                                    {% if plan.get_completion_percentage >= 100 %}bg-success
-                                    {% elif plan.get_completion_percentage >= 75 %}bg-info
-                                    {% elif plan.get_completion_percentage >= 50 %}bg-warning
-                                    {% else %}bg-danger{% endif %}"
-                                    role="progressbar"
-                                    style="width: {% widthratio plan.get_completion_percentage 1 1 %}%;"
-                                    aria-valuenow="{{ plan.get_completion_percentage }}"
-                                    aria-valuemin="0"
-                                    aria-valuemax="100">
-                                    {{ plan.get_completion_percentage }}%
-                                </div>
-                            </div>
-                            {% if plan.get_completion_percentage > 100 %}
-                                <span class="badge bg-success mt-1">Перевыполнение!</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            <small>{{ plan.updated_at|date:"d.m.Y" }}</small>
-                            <br><small class="text-muted">{{ plan.updated_by.username|default:"—" }}</small>
-                        </td>
-                        <td>
-                            <div class="btn-group btn-group-sm">
-                                <a href="{% url 'plan_edit' plan.user.id %}" class="btn btn-primary" title="Редактировать">
-                                    <i class="bi bi-pencil"></i>
-                                </a>
-                                <a href="{% url 'user_sales_detail' plan.user.id %}" class="btn btn-info" title="Детали">
-                                    <i class="bi bi-eye"></i>
-                                </a>
-                            </div>
-                        </td>
-                    </tr>
-                    {% empty %}
-                    <tr>
-                        <td colspan="6" class="text-center py-4">
-                            <i class="bi bi-table fs-1 d-block text-muted mb-3"></i>
-                            <p class="text-muted">Нет созданных планов</p>
-                            <a href="/admin/cash_app/salesplan/add/" class="btn btn-success">
-                                <i class="bi bi-plus-lg"></i> Создать план
-                            </a>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
         </div>
     </div>
 </div>

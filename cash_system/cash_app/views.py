@@ -27,13 +27,25 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from .forms import CouponForm, DisposalForm, LoginForm, ProductForm, SalesPlanForm
-from .models import Category, Coupon, History, Product, SalesPlan
+from .models import Category, Coupon, History, Product, SalesPlan, PriceList, PriceListItem, StoreAddress, StoreProduct, UserProfile
 from .payment import check_terminal_status, process_terminal_payment
 
 
 def is_admin(user):
     """Проверка, является ли пользователь администратором"""
     return user.is_staff or user.is_superuser
+
+
+def is_cashier(user):
+    """Проверка, является ли пользователь кассиром (обычный пользователь)"""
+    return not user.is_staff and not user.is_superuser
+
+
+def get_user_store(user):
+    """Получить склад, к которому привязан пользователь"""
+    if hasattr(user, 'profile') and user.profile.store:
+        return user.profile.store
+    return None
 
 
 def parse_decimal_quantity(value):
@@ -106,28 +118,51 @@ def index(request):
 
 @login_required
 def product_list(request):
-    """Список товаров с фильтрацией по статусу и поиском"""
+    """Список товаров с фильтрацией по статусу и поиском (для админа - все склады)"""
+    if is_cashier(request.user):
+        return redirect('sale')
+    
+    # Получаем выбранный склад из сессии (для админа)
+    selected_store_id = request.session.get('selected_store')
+    selected_store = None
+    if selected_store_id:
+        try:
+            selected_store = StoreAddress.objects.get(pk=selected_store_id, is_active=True)
+        except StoreAddress.DoesNotExist:
+            selected_store = None
+    
     filter_type = request.GET.get('filter', 'all')
     search_query = request.GET.get('search', '').strip()
     
-    products = Product.objects.all()
+    # Если админ выбрал конкретный склад, показываем товары только этого склада
+    if selected_store:
+        store_products = StoreProduct.objects.filter(store=selected_store).select_related('product', 'product__category')
+        products = []
+        for sp in store_products:
+            product = sp.product
+            product.current_quantity = sp.quantity
+            products.append(product)
+    else:
+        # Показываем все товары (агрегированные остатки по всем складам)
+        all_products = Product.objects.all()
+        products = []
+        for product in all_products:
+            total_quantity = StoreProduct.objects.filter(product=product).aggregate(total=Sum('quantity'))['total'] or 0
+            product.current_quantity = total_quantity
+            products.append(product)
     
-    # Применяем поиск по названию (регистронезависимый)
+    # Применяем поиск по названию
     if search_query:
         search_query_lower = search_query.lower()
-        all_products = list(products)
         filtered_products = []
-        
-        for product in all_products:
+        for product in products:
             name_lower = product.name.lower() if product.name else ''
             if search_query_lower in name_lower:
                 filtered_products.append(product)
-        
         products = filtered_products
         search_title = f'Результаты поиска: "{search_query}"'
     else:
         search_title = None
-        products = list(products)
     
     # Применяем фильтр по статусу
     if filter_type == 'expired':
@@ -140,10 +175,11 @@ def product_list(request):
         filter_type = 'all'
         filter_title = "Все товары"
     
-    all_products = Product.objects.all()
-    total_products = all_products.count()
-    expired_count = sum(1 for p in all_products if p.is_expired())
-    expiring_soon_count = sum(1 for p in all_products if p.is_expiring_soon())
+    total_products = len(products)
+    expired_count = sum(1 for p in products if p.is_expired())
+    expiring_soon_count = sum(1 for p in products if p.is_expiring_soon())
+    
+    stores = StoreAddress.objects.filter(is_active=True)
     
     context = {
         'products': products,
@@ -154,26 +190,38 @@ def product_list(request):
         'filter_title': filter_title,
         'search_query': search_query,
         'search_title': search_title,
+        'stores': stores,
+        'selected_store': selected_store,
     }
     return render(request, 'cash_app/product_list.html', context)
 
 
 @login_required
+@user_passes_test(is_admin)
 def product_create(request):
-    """Создание товара"""
+    """Создание товара (только для администратора)"""
     if request.method == 'POST':
         form = ProductForm(request.POST)
         if form.is_valid():
             product = form.save()
-
-            if product.quantity > 0:
-                History.objects.create(
-                    type='receipt',
+            
+            # Добавляем товар на все активные склады с нулевым остатком
+            stores = StoreAddress.objects.filter(is_active=True)
+            for store in stores:
+                StoreProduct.objects.get_or_create(
+                    store=store,
                     product=product,
-                    quantity=product.quantity,
-                    user=request.user
+                    defaults={'quantity': 0}
                 )
-
+            
+            # Создаем запись в истории о добавлении товара
+            History.objects.create(
+                type='receipt',
+                product=product,
+                quantity=0,
+                user=request.user
+            )
+            
             messages.success(request, 'Товар успешно добавлен! QR-код сгенерирован')
             return redirect('product_list')
     else:
@@ -183,33 +231,15 @@ def product_create(request):
 
 
 @login_required
+@user_passes_test(is_admin)
 def product_update(request, pk):
-    """Редактирование товара"""
+    """Редактирование товара (только для администратора)"""
     product = get_object_or_404(Product, pk=pk)
-    old_quantity = product.quantity
     
     if request.method == 'POST':
         form = ProductForm(request.POST, instance=product)
         if form.is_valid():
-            new_product = form.save()
-            
-            # Если количество изменилось, создаем запись в истории
-            if new_product.quantity != old_quantity:
-                if new_product.quantity > old_quantity:
-                    History.objects.create(
-                        type='receipt',
-                        product=new_product,
-                        quantity=new_product.quantity - old_quantity,
-                        user=request.user
-                    )
-                else:
-                    History.objects.create(
-                        type='disposal',
-                        product=new_product,
-                        quantity=old_quantity - new_product.quantity,
-                        user=request.user
-                    )
-            
+            form.save()
             messages.success(request, 'Товар успешно обновлен!')
             return redirect('product_list')
     else:
@@ -223,8 +253,9 @@ def product_update(request, pk):
 
 
 @login_required
+@user_passes_test(is_admin)
 def product_delete(request, pk):
-    """Удаление товара"""
+    """Удаление товара (только для администратора)"""
     product = get_object_or_404(Product, pk=pk)
 
     if request.method == 'POST':
@@ -243,8 +274,9 @@ def product_delete(request, pk):
 
 
 @login_required
+@user_passes_test(is_admin)
 def product_disposal(request, pk):
-    """Списание просроченного товара"""
+    """Списание товара (только для администратора)"""
     product = get_object_or_404(Product, pk=pk)
 
     if not product.is_expired():
@@ -292,53 +324,41 @@ def product_disposal(request, pk):
 
 @login_required
 def history_list(request):
-    """История движений товаров с корректной фильтрацией и группировкой продаж"""
+    """История движений товаров с группировкой по датам"""
     type_filter = request.GET.get('type')
     product_filter = request.GET.get('product')
-
+    
     base_qs = History.objects.all().select_related('product', 'user', 'coupon')
-
-    sales_qs = base_qs.filter(type='sale').order_by('-date')
-    other_qs = base_qs.exclude(type='sale').order_by('-date')
-
+    
+    # Кассиры видят только продажи (без поступлений и списаний)
+    if is_cashier(request.user):
+        base_qs = base_qs.filter(type='sale')
+    
+    # Применяем фильтры
+    if type_filter:
+        if type_filter in ['receipt', 'disposal'] and not is_cashier(request.user):
+            base_qs = base_qs.filter(type=type_filter)
+        elif type_filter == 'sale':
+            base_qs = base_qs.filter(type='sale')
+    
     if product_filter:
-        sales_qs = sales_qs.filter(product_id=product_filter)
-        other_qs = other_qs.filter(product_id=product_filter)
-
-    if type_filter == 'sale':
-        other_qs = other_qs.none()
-    elif type_filter in ['receipt', 'disposal']:
-        other_qs = other_qs.filter(type=type_filter)
-        sales_qs = sales_qs.none()
-
-    grouped_sales = {}
-    for sale in sales_qs:
-        if sale.sale_group not in grouped_sales:
-            grouped_sales[sale.sale_group] = {
-                'type': 'sale_group',
-                'sale_group': sale.sale_group,
-                'date': sale.date,
-                'user': sale.user,
-                'coupon': sale.coupon,
-                'items': [],
-                'total': 0,
-            }
-
-        grouped_sales[sale.sale_group]['items'].append(sale)
-        grouped_sales[sale.sale_group]['total'] += float(sale.total_price or 0)
-
-    grouped_sales_list = list(grouped_sales.values())
-    grouped_sales_list.sort(key=lambda x: x['date'], reverse=True)
-
-    all_entries = list(other_qs) + grouped_sales_list
-    all_entries.sort(key=lambda x: x.date if hasattr(x, 'date') else x['date'], reverse=True)
-
+        base_qs = base_qs.filter(product_id=product_filter)
+    
+    # Группировка по датам
+    entries_by_date = {}
+    for entry in base_qs.order_by('-date'):
+        date_key = entry.date.strftime('%d.%m.%Y')
+        if date_key not in entries_by_date:
+            entries_by_date[date_key] = []
+        entries_by_date[date_key].append(entry)
+    
     context = {
-        'entries': all_entries,
+        'entries_by_date': entries_by_date,
         'type_choices': History.TYPE_CHOICES,
         'products': Product.objects.all(),
         'current_type': type_filter,
         'current_product': product_filter,
+        'is_cashier': is_cashier(request.user),
     }
     return render(request, 'cash_app/history_list.html', context)
 
@@ -346,6 +366,13 @@ def history_list(request):
 @login_required
 def sale_view(request):
     """Продажа товаров"""
+    # Получаем склад пользователя
+    user_store = get_user_store(request.user)
+    
+    if not user_store and not is_admin(request.user):
+        messages.error(request, 'Ваш аккаунт не привязан к складу. Обратитесь к администратору.')
+        return redirect('dashboard')
+    
     if request.method == 'POST':
         cart = request.session.get('cart', {})
         
@@ -382,15 +409,18 @@ def sale_view(request):
                 if product.unit == 'kg' and quantity < Decimal('0.001'):
                     raise ValueError(f'Минимальное количество для "{product.name}" - 0,001 кг')
                 
-                # Проверка наличия на складе
-                if float(product.quantity) < float(quantity):
+                # Проверка наличия на складе пользователя
+                store_product = StoreProduct.objects.filter(store=user_store, product=product).first()
+                available_quantity = store_product.quantity if store_product else 0
+                
+                if float(available_quantity) < float(quantity):
                     raise ValueError(f'Недостаточно "{product.name}" на складе')
                 
                 # Проверка на просрочку
                 if product.expiration_date < date.today():
                     raise ValueError(f'Товар "{product.name}" просрочен')
                 
-                item_price = Decimal(str(product.price))
+                item_price = Decimal(str(item['price']))
                 item_total = item_price * quantity
                 total_without_discount += item_total
                 
@@ -439,11 +469,34 @@ def sale_view(request):
             return redirect('sale')
     
     # GET часть - отображение страницы продажи
-    # Группируем товары по категориям
-    available_products = Product.objects.filter(
-        quantity__gt=0,
-        expiration_date__gte=date.today()
-    ).select_related('category').order_by('category__name', 'name')
+    # Получаем активные прайс-листы
+    active_price_lists = PriceList.objects.filter(is_active=True)
+    
+    # Получаем выбранный прайс-лист из сессии
+    selected_price_list_id = request.session.get('selected_price_list')
+    selected_price_list = None
+    selected_prices = {}
+    available_products = []
+    
+    if selected_price_list_id:
+        try:
+            selected_price_list = PriceList.objects.get(pk=selected_price_list_id, is_active=True)
+            # Получаем все товары из выбранного прайс-листа
+            price_list_items = selected_price_list.items.select_related('product', 'product__category').all()
+            
+            for item in price_list_items:
+                product = item.product
+                # Получаем остаток на складе пользователя
+                store_product = StoreProduct.objects.filter(store=user_store, product=product).first()
+                quantity = store_product.quantity if store_product else 0
+                
+                if quantity > 0 and product.expiration_date >= date.today():
+                    product.display_price = item.get_price()
+                    product.current_quantity = quantity
+                    available_products.append(product)
+                    
+        except PriceList.DoesNotExist:
+            selected_price_list = None
     
     # Группируем товары по категориям
     categories_with_products = {}
@@ -465,7 +518,7 @@ def sale_view(request):
         try:
             product = Product.objects.get(pk=product_id)
             quantity = Decimal(str(item['quantity']).replace(',', '.'))
-            subtotal = product.price * quantity
+            subtotal = Decimal(str(item['price'])) * quantity
             total += subtotal
             
             cart_items.append({
@@ -516,6 +569,8 @@ def sale_view(request):
         'discount_amount': float(discount_amount),
         'available_coupons': available_coupons,
         'applied_coupon': applied_coupon,
+        'active_price_lists': active_price_lists,
+        'selected_price_list': selected_price_list,
     }
     return render(request, 'cash_app/sale.html', context)
 
@@ -534,8 +589,13 @@ def add_to_cart(request):
             messages.error(request, str(e))
             return redirect('sale')
 
+        # Получаем склад пользователя
+        user_store = get_user_store(request.user)
+        store_product = StoreProduct.objects.filter(store=user_store, product=product).first()
+        available_quantity = store_product.quantity if store_product else 0
+
         # Проверка наличия на складе
-        if product.quantity < quantity:
+        if available_quantity < quantity:
             messages.error(request, f'Недостаточно товара "{product.name}" на складе')
             return redirect('sale')
 
@@ -557,14 +617,14 @@ def add_to_cart(request):
         new_quantity = current_quantity + quantity
 
         # Проверяем, что новое количество не превышает остаток на складе
-        if new_quantity > product.quantity:
-            messages.error(request, f'Нельзя добавить больше, чем есть на складе (доступно: {product.quantity} {product.get_unit_display()})')
+        if new_quantity > available_quantity:
+            messages.error(request, f'Нельзя добавить больше, чем есть на складе (доступно: {available_quantity} {product.get_unit_display()})')
             return redirect('sale')
 
         # Сохраняем в корзину
         cart[product_id_str] = {
             'quantity': float(new_quantity) if product.unit == 'kg' else int(new_quantity),
-            'price': str(product.price),
+            'price': str(product.display_price if hasattr(product, 'display_price') else product.price),
             'unit': product.unit,
         }
 
@@ -594,6 +654,7 @@ def remove_from_cart(request, product_id):
         messages.success(request, 'Товар удален из корзины')
     
     return redirect('sale')
+
 
 @login_required
 def clear_cart(request):
@@ -627,7 +688,6 @@ def receipt_pdf(request):
 
     buffer = BytesIO()
     
-    # Создаем PDF документ с отступами для печати
     doc = SimpleDocTemplate(
         buffer,
         pagesize=A4,
@@ -638,16 +698,12 @@ def receipt_pdf(request):
     )
     
     # Используем встроенные шрифты reportlab
-    # Helvetica не поддерживает кириллицу, но мы будем использовать стандартный шрифт
-    # Для корректного отображения кириллицы используем стандартный шрифт с поддержкой Unicode
     try:
-        # Пытаемся использовать шрифт, который поддерживает кириллицу в системе
         from reportlab.pdfbase import pdfmetrics
         from reportlab.pdfbase.ttfonts import TTFont
         import platform
         import os
         
-        # Пытаемся найти системный шрифт с кириллицей
         font_paths = []
         
         if platform.system() == 'Windows':
@@ -662,7 +718,7 @@ def receipt_pdf(request):
                 '/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf',
                 '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
             ]
-        elif platform.system() == 'Darwin':  # macOS
+        elif platform.system() == 'Darwin':
             font_paths = [
                 '/System/Library/Fonts/Arial.ttf',
                 '/System/Library/Fonts/Times.ttf',
@@ -671,7 +727,6 @@ def receipt_pdf(request):
         regular_font = 'Helvetica'
         bold_font = 'Helvetica-Bold'
         
-        # Пробуем загрузить найденный шрифт
         for font_path in font_paths:
             if os.path.exists(font_path):
                 try:
@@ -688,18 +743,16 @@ def receipt_pdf(request):
     
     styles = getSampleStyleSheet()
     
-    # Стиль для заголовка
     title_style = ParagraphStyle(
         'CustomTitle',
         parent=styles['Heading1'],
         fontName=bold_font,
         fontSize=18,
-        alignment=1,  # Центр
+        alignment=1,
         spaceAfter=20,
         textColor=colors.HexColor('#2c3e50')
     )
     
-    # Стиль для информации
     info_style = ParagraphStyle(
         'Info',
         parent=styles['Normal'],
@@ -707,10 +760,9 @@ def receipt_pdf(request):
         fontSize=10,
         leading=14,
         spaceAfter=4,
-        alignment=0,  # Лево
+        alignment=0,
     )
     
-    # Стиль для текста в таблице
     table_text_style = ParagraphStyle(
         'TableText',
         parent=styles['Normal'],
@@ -719,33 +771,20 @@ def receipt_pdf(request):
         leading=12
     )
     
-    # Стиль для заголовков таблицы
     table_header_style = ParagraphStyle(
         'TableHeader',
         parent=styles['Normal'],
         fontName=bold_font,
         fontSize=9,
         leading=12,
-        alignment=1  # Центр
-    )
-    
-    # Стиль для итогов
-    total_style = ParagraphStyle(
-        'Total',
-        parent=styles['Normal'],
-        fontName=bold_font,
-        fontSize=11,
-        leading=14,
-        alignment=2  # Право
+        alignment=1
     )
     
     story = []
     
-    # ========== ЗАГОЛОВОК ==========
-    story.append(Paragraph("KAССОВЫЙ ЧЕК", title_style))  # Используем латиницу для заголовка
+    story.append(Paragraph("КАССОВЫЙ ЧЕК", title_style))
     story.append(Spacer(1, 10))
     
-    # ========== ИНФОРМАЦИЯ О ПРОДАЖЕ ==========
     story.append(Paragraph(f"Дата: {receipt['date']}", info_style))
     story.append(Paragraph(f"Кассир: {receipt['cashier']}", info_style))
     
@@ -758,20 +797,16 @@ def receipt_pdf(request):
     
     story.append(Spacer(1, 15))
     
-    # ========== ТАБЛИЦА ТОВАРОВ ==========
-    # Заголовки таблицы на латинице
     data = [
         [
             Paragraph("№", table_header_style),
-            Paragraph("Продукт", table_header_style),
-            Paragraph("Количество", table_header_style),
+            Paragraph("Товар", table_header_style),
+            Paragraph("Кол-во", table_header_style),
             Paragraph("Цена", table_header_style),
-            Paragraph("Итого", table_header_style),
+            Paragraph("Сумма", table_header_style),
         ]
     ]
     
-    # Товары - названия товаров могут быть на кириллице, но они отобразятся
-    # как есть (в PDF они будут видны, просто не будут выделены жирным)
     for i, item in enumerate(receipt['items'], 1):
         data.append([
             Paragraph(str(i), table_text_style),
@@ -781,12 +816,11 @@ def receipt_pdf(request):
             Paragraph(f"{item['total']:.2f} ₽", table_text_style),
         ])
     
-    # Подвал таблицы
     data.append([
         Paragraph("", table_text_style),
         Paragraph("", table_text_style),
         Paragraph("", table_text_style),
-        Paragraph("<b>ПОДИТОГ:</b>", table_text_style),
+        Paragraph("<b>ПОДЫТОГ:</b>", table_text_style),
         Paragraph(f"<b>{receipt['subtotal']:.2f} ₽</b>", table_text_style),
     ])
     
@@ -807,27 +841,20 @@ def receipt_pdf(request):
         Paragraph(f"<b>{receipt['total']:.2f} ₽</b>", table_text_style),
     ])
     
-    # Создаем таблицу с правильными ширинами колонок
     table = Table(data, colWidths=[30, 220, 70, 70, 80])
     table.setStyle(TableStyle([
-        # Шрифты
         ('FONTNAME', (0, 0), (-1, -1), regular_font),
-        # Заголовок
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e9ecef')),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#2c3e50')),
         ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
         ('FONTNAME', (0, 0), (-1, 0), bold_font),
-        # Сетка
         ('GRID', (0, 0), (-1, -4), 0.5, colors.HexColor('#dee2e6')),
         ('GRID', (0, -3), (-1, -1), 0.5, colors.HexColor('#dee2e6')),
-        # Выравнивание
         ('ALIGN', (0, 1), (0, -1), 'CENTER'),
         ('ALIGN', (2, 1), (4, -1), 'RIGHT'),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        # Отступы
         ('TOPPADDING', (0, 0), (-1, -1), 8),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-        # Итоговая строка
         ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#f8f9fa')),
         ('FONTNAME', (0, -1), (-1, -1), bold_font),
     ]))
@@ -835,7 +862,6 @@ def receipt_pdf(request):
     story.append(table)
     story.append(Spacer(1, 20))
     
-    # ========== ПОДПИСЬ ==========
     thanks_style = ParagraphStyle(
         'Thanks',
         parent=styles['Normal'],
@@ -845,10 +871,9 @@ def receipt_pdf(request):
         spaceAfter=5
     )
     
-    story.append(Paragraph("Спасибо Вам за покупку!", thanks_style))
+    story.append(Paragraph("Спасибо за покупку!", thanks_style))
     story.append(Paragraph("Чек является фискальным документом", thanks_style))
     
-    # ========== ДОПОЛНИТЕЛЬНАЯ ИНФОРМАЦИЯ ==========
     story.append(Spacer(1, 15))
     
     footer_style = ParagraphStyle(
@@ -863,13 +888,11 @@ def receipt_pdf(request):
     story.append(Paragraph("Кассовая система", footer_style))
     story.append(Paragraph(f"Чек сформирован: {timezone.now().strftime('%d.%m.%Y %H:%M')}", footer_style))
     
-    # Строим документ
     doc.build(story)
     
     pdf = buffer.getvalue()
     buffer.close()
     
-    # Формируем имя файла
     filename = f"receipt_{receipt['date'].replace(' ', '_').replace(':', '-')}.pdf"
     
     response = HttpResponse(pdf, content_type='application/pdf')
@@ -880,13 +903,17 @@ def receipt_pdf(request):
 
 @login_required
 def dashboard_view(request):
-    """Дашборд эффективности с улучшенным отображением"""
+    """Дашборд эффективности с учетом складов"""
     now = timezone.now()
     start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     start_of_year = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
     
     # Для обычного пользователя - только свои данные
     if not is_admin(request.user):
+        user_store = get_user_store(request.user)
+        if not user_store:
+            return render(request, 'cash_app/no_store.html')
+        
         try:
             plan = SalesPlan.objects.get(user=request.user)
         except SalesPlan.DoesNotExist:
@@ -961,6 +988,7 @@ def dashboard_view(request):
             'labels': json.dumps(labels),
             'has_sales': any(d > 0 for d in daily_data),
             'is_admin': False,
+            'user_store': user_store,
         }
         
         return render(request, 'cash_app/dashboard_user.html', context)
@@ -1048,6 +1076,22 @@ def dashboard_view(request):
                 'quantity': float(p['quantity'])
             })
         
+        # Статистика по складам
+        stores = StoreAddress.objects.filter(is_active=True)
+        store_stats = []
+        for store in stores:
+            store_sales = History.objects.filter(
+                type='sale',
+                date__gte=start_of_month
+            )
+            # Фильтр по складу будет работать после добавления поля store в History
+            store_stats.append({
+                'store': store,
+                'sales': 0,  # Временно
+                'sales_count': 0,
+                'users_count': UserProfile.objects.filter(store=store).count()
+            })
+        
         context = {
             'total_monthly_sales': round(float(total_monthly_sales), 2),
             'total_yearly_sales': round(float(total_yearly_sales), 2),
@@ -1062,10 +1106,12 @@ def dashboard_view(request):
             'top_products': top_products_list,
             'has_sales': any(d > 0 for d in daily_data),
             'is_admin': True,
+            'stores': stores,
+            'store_stats': store_stats,
         }
         
         return render(request, 'cash_app/dashboard_admin.html', context)
-    
+
 
 @login_required
 @user_passes_test(is_admin)
@@ -1091,6 +1137,7 @@ def plan_edit(request, user_id):
         'plan': plan,
     }
     return render(request, 'cash_app/plan_edit.html', context)
+
 
 @login_required
 def user_sales_detail(request, user_id):
@@ -1125,6 +1172,7 @@ def user_sales_detail(request, user_id):
     }
     return render(request, 'cash_app/user_sales_detail.html', context)
 
+
 # Функции для управления купонами (только для администратора)
 @login_required
 @user_passes_test(is_admin)
@@ -1132,6 +1180,7 @@ def coupon_list(request):
     """Список купонов"""
     coupons = Coupon.objects.all().order_by('-created_at')
     return render(request, 'cash_app/coupon_list.html', {'coupons': coupons})
+
 
 @login_required
 @user_passes_test(is_admin)
@@ -1149,6 +1198,7 @@ def coupon_create(request):
         form = CouponForm()
     return render(request, 'cash_app/coupon_form.html', {'form': form, 'title': 'Создание купона'})
 
+
 @login_required
 @user_passes_test(is_admin)
 def coupon_edit(request, pk):
@@ -1164,6 +1214,7 @@ def coupon_edit(request, pk):
         form = CouponForm(instance=coupon)
     return render(request, 'cash_app/coupon_form.html', {'form': form, 'title': 'Редактирование купона'})
 
+
 @login_required
 @user_passes_test(is_admin)
 def coupon_delete(request, pk):
@@ -1174,6 +1225,7 @@ def coupon_delete(request, pk):
         messages.success(request, 'Купон удален')
         return redirect('coupon_list')
     return render(request, 'cash_app/coupon_confirm_delete.html', {'coupon': coupon})
+
 
 @login_required
 def apply_coupon(request):
@@ -1194,6 +1246,7 @@ def apply_coupon(request):
             messages.error(request, 'Выберите купон')
     return redirect('sale')
 
+
 @login_required
 def remove_coupon(request):
     """Удаление купона из корзины"""
@@ -1210,6 +1263,7 @@ def category_list(request):
     """Список категорий"""
     categories = Category.objects.all().order_by('name')
     return render(request, 'cash_app/category_list.html', {'categories': categories})
+
 
 @login_required
 @user_passes_test(is_admin)
@@ -1228,6 +1282,7 @@ def category_create(request):
         return redirect('category_list')
     
     return render(request, 'cash_app/category_form.html', {'title': 'Создание категории'})
+
 
 @login_required
 @user_passes_test(is_admin)
@@ -1255,13 +1310,13 @@ def category_edit(request, pk):
     }
     return render(request, 'cash_app/category_form.html', context)
 
+
 @login_required
 @user_passes_test(is_admin)
 def category_delete(request, pk):
     """Удаление категории"""
     category = get_object_or_404(Category, pk=pk)
     
-    # Проверяем, есть ли товары в этой категории
     products_count = Product.objects.filter(category=category).count()
     
     if request.method == 'POST':
@@ -1298,16 +1353,14 @@ def save_collapsed_categories(request):
 @login_required
 def scan_qr(request):
     """Страница сканирования QR-кода"""
-    action = request.GET.get('action', 'add_to_cart')  # add_to_cart или receipt
+    action = request.GET.get('action', 'add_to_cart')
     
-    # Проверяем, есть ли в сессии сохраненный товар (если пришли с результата)
     scanned_product_id = request.session.get('scanned_product_id')
     scan_action = request.session.get('scan_action')
     
     if scanned_product_id and scan_action:
         try:
             product = Product.objects.get(pk=scanned_product_id)
-            # Очищаем сессию
             del request.session['scanned_product_id']
             del request.session['scan_action']
             return render(request, 'cash_app/scan_qr.html', {
@@ -1327,19 +1380,17 @@ def scan_qr(request):
 def scan_qr_result(request):
     """Обработка результата сканирования QR-кода"""
     qr_data = request.GET.get('data', '')
-    action = request.GET.get('action', 'add_to_cart')  # add_to_cart или receipt
+    action = request.GET.get('action', 'add_to_cart')
     
     if not qr_data:
         messages.error(request, 'Не удалось прочитать QR-код')
         return redirect('scan_qr')
     
-    # Парсим данные из QR-кода
     try:
         if qr_data.startswith('product:'):
             qr_uuid = qr_data.replace('product:', '')
             product = Product.objects.get(qr_uuid=qr_uuid)
             
-            # Сохраняем в сессии для следующего шага
             request.session['scanned_product_id'] = product.id
             request.session['scan_action'] = action
             
@@ -1368,11 +1419,9 @@ def scan_qr_upload(request):
         action = request.POST.get('action', 'add_to_cart')
         
         try:
-            # Читаем загруженное изображение
             image_file = request.FILES['qr_image']
             image = Image.open(io.BytesIO(image_file.read()))
             
-            # Декодируем QR-код
             decoded_objects = decode(image)
             
             if decoded_objects:
@@ -1394,10 +1443,8 @@ def process_qr_action(request):
         quantity_str = request.POST.get('quantity', '1')
         action = request.POST.get('action')
 
-        # Получаем товар
         product = get_object_or_404(Product, pk=product_id)
 
-        # Преобразуем и проверяем количество
         try:
             quantity = parse_decimal_quantity(quantity_str)
             validate_quantity_for_product(product, quantity)
@@ -1405,23 +1452,22 @@ def process_qr_action(request):
             messages.error(request, str(e))
             return redirect('scan_qr')
 
-        # Обработка для добавления в корзину (продажа)
         if action == 'add_to_cart':
-            # Проверка наличия на складе
-            if product.quantity < quantity:
+            user_store = get_user_store(request.user)
+            store_product = StoreProduct.objects.filter(store=user_store, product=product).first()
+            available_quantity = store_product.quantity if store_product else 0
+
+            if available_quantity < quantity:
                 messages.error(request, f'Недостаточно товара "{product.name}" на складе')
                 return redirect('sale')
-            
-            # Проверка на просрочку
+
             if product.expiration_date < date.today():
                 messages.error(request, f'Товар "{product.name}" просрочен и не может быть продан')
                 return redirect('sale')
-            
-            # Получаем текущую корзину
+
             cart = request.session.get('cart', {})
             product_id_str = str(product.id)
-            
-            # Получаем текущее количество товара в корзине
+
             current_quantity = Decimal('0.00')
             if product_id_str in cart:
                 try:
@@ -1429,25 +1475,21 @@ def process_qr_action(request):
                 except (KeyError, ValueError):
                     current_quantity = Decimal('0.00')
             
-            # Вычисляем новое количество
             new_quantity = current_quantity + quantity
-            
-            # Проверяем, что новое количество не превышает остаток на складе
-            if new_quantity > product.quantity:
-                messages.error(request, f'Нельзя добавить больше, чем есть на складе (доступно: {product.quantity} {product.get_unit_display()})')
+
+            if new_quantity > available_quantity:
+                messages.error(request, f'Нельзя добавить больше, чем есть на складе (доступно: {available_quantity} {product.get_unit_display()})')
                 return redirect('sale')
             
-            # Сохраняем в корзину
             cart[product_id_str] = {
                 'quantity': float(new_quantity) if product.unit == 'kg' else int(new_quantity),
-                'price': str(product.price),
+                'price': str(product.display_price if hasattr(product, 'display_price') else product.price),
                 'unit': product.unit,
             }
             
             request.session['cart'] = cart
             request.session.modified = True
             
-            # Форматируем количество для отображения
             if product.unit == 'kg':
                 qty_display = f"{float(quantity):.3f}"
             else:
@@ -1455,22 +1497,18 @@ def process_qr_action(request):
             
             messages.success(request, f'Товар "{product.name}" добавлен в корзину ({qty_display} {product.get_unit_display()})')
             return redirect('sale')
-        
-        # Обработка для поступления товара
+
         elif action == 'receipt':
-            # Увеличиваем количество на складе
             product.quantity += quantity
             product.save()
-            
-            # Создаем запись в истории
+
             History.objects.create(
                 type='receipt',
                 product=product,
                 quantity=quantity,
                 user=request.user
             )
-            
-            # Форматируем количество для отображения
+
             if product.unit == 'kg':
                 qty_display = f"{float(quantity):.3f}"
             else:
@@ -1488,7 +1526,7 @@ def process_qr_action(request):
 
 @login_required
 def generate_product_qr(request, product_id):
-    """Генерация QR-кода для существующего товара (на случай если его нет)"""
+    """Генерация QR-кода для существующего товара"""
     product = get_object_or_404(Product, pk=product_id)
     
     if not product.qr_code:
@@ -1510,16 +1548,13 @@ def download_product_qr(request, product_id):
         product.generate_qr_code()
         product.save()
     
-    from django.http import FileResponse
-    import os
-    
     response = FileResponse(product.qr_code, as_attachment=True, filename=f'qr_{product.name}.png')
     return response
 
 
 @login_required
 def print_product_qr(request, product_id):
-    """Печать QR-кода товара (открывает в новом окне для печати)"""
+    """Печать QR-кода товара"""
     product = get_object_or_404(Product, pk=product_id)
     
     if not product.qr_code:
@@ -1586,27 +1621,30 @@ def process_payment(request):
                 coupon = Coupon.objects.filter(pk=coupon_id).first()
 
             locked_products = {}
+            user_store = get_user_store(request.user)
 
             for item in sale_items:
                 product = Product.objects.select_for_update().get(pk=item['product_id'])
                 quantity = parse_decimal_quantity(item['quantity'])
                 validate_quantity_for_product(product, quantity)
 
-                if product.quantity < quantity:
+                store_product = StoreProduct.objects.select_for_update().get(store=user_store, product=product)
+                
+                if store_product.quantity < quantity:
                     raise ValueError(
                         f'Количество товара "{product.name}" изменилось. '
-                        f'Требуется: {quantity}, доступно: {product.quantity}'
+                        f'Требуется: {quantity}, доступно: {store_product.quantity}'
                     )
 
                 if product.expiration_date < date.today():
                     raise ValueError(f'Товар "{product.name}" просрочен и не может быть продан')
 
-                locked_products[product.id] = (product, quantity)
+                locked_products[product.id] = (product, store_product, quantity)
 
             for item in sale_items:
-                product, quantity = locked_products[item['product_id']]
-                product.quantity -= quantity
-                product.save(update_fields=['quantity', 'updated_at', 'qr_code'])
+                product, store_product, quantity = locked_products[item['product_id']]
+                store_product.quantity -= quantity
+                store_product.save()
 
                 History.objects.create(
                     type='sale',
@@ -1624,7 +1662,7 @@ def process_payment(request):
 
             products_for_receipt = []
             for item in sale_items:
-                product, quantity = locked_products[item['product_id']]
+                product, _, quantity = locked_products[item['product_id']]
                 products_for_receipt.append({
                     'name': product.name,
                     'quantity': float(quantity) if product.unit == 'kg' else int(quantity),
@@ -1689,7 +1727,6 @@ def payment_callback(request):
     """Callback для получения результатов оплаты от терминала"""
     if request.method == 'POST':
         try:
-            # Пытаемся получить JSON данные
             try:
                 data = json.loads(request.body)
             except:
@@ -1701,7 +1738,6 @@ def payment_callback(request):
             status = data.get('status')
             
             if payment_id and status:
-                # Сохраняем в сессию результат
                 if 'payment_callbacks' not in request.session:
                     request.session['payment_callbacks'] = {}
                 request.session['payment_callbacks'][payment_id] = {
@@ -1718,3 +1754,286 @@ def payment_callback(request):
             return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
     
     return JsonResponse({'status': 'error'}, status=405)
+
+
+# Функции для управления складами
+@login_required
+@user_passes_test(is_admin)
+def store_list(request):
+    """Список складов"""
+    stores = StoreAddress.objects.all().order_by('name')
+    return render(request, 'cash_app/store_list.html', {'stores': stores})
+
+
+@login_required
+@user_passes_test(is_admin)
+def store_create(request):
+    """Создание склада"""
+    if request.method == 'POST':
+        name = request.POST.get('name')
+        address = request.POST.get('address')
+        city = request.POST.get('city', '')
+        phone = request.POST.get('phone', '')
+        
+        if name and address:
+            StoreAddress.objects.create(
+                name=name,
+                address=address,
+                city=city,
+                phone=phone,
+                is_active=True
+            )
+            messages.success(request, f'Склад "{name}" успешно создан')
+            return redirect('store_list')
+        else:
+            messages.error(request, 'Название и адрес склада обязательны')
+    
+    return render(request, 'cash_app/store_form.html', {'title': 'Создание склада'})
+
+
+@login_required
+@user_passes_test(is_admin)
+def store_edit(request, pk):
+    """Редактирование склада"""
+    store = get_object_or_404(StoreAddress, pk=pk)
+    
+    if request.method == 'POST':
+        store.name = request.POST.get('name')
+        store.address = request.POST.get('address')
+        store.city = request.POST.get('city', '')
+        store.phone = request.POST.get('phone', '')
+        store.is_active = request.POST.get('is_active') == 'on'
+        store.save()
+        messages.success(request, f'Склад "{store.name}" успешно обновлен')
+        return redirect('store_list')
+    
+    context = {
+        'title': 'Редактирование склада',
+        'store': store
+    }
+    return render(request, 'cash_app/store_form.html', context)
+
+
+@login_required
+@user_passes_test(is_admin)
+def store_delete(request, pk):
+    """Удаление склада"""
+    store = get_object_or_404(StoreAddress, pk=pk)
+    
+    if request.method == 'POST':
+        name = store.name
+        store.delete()
+        messages.success(request, f'Склад "{name}" удален')
+        return redirect('store_list')
+    
+    return render(request, 'cash_app/store_confirm_delete.html', {'store': store})
+
+
+# Функции для управления прайс-листами
+@login_required
+@user_passes_test(is_admin)
+def price_list_list(request):
+    """Список прайс-листов"""
+    price_lists = PriceList.objects.all().order_by('name')
+    return render(request, 'cash_app/price_list_list.html', {'price_lists': price_lists})
+
+
+@login_required
+@user_passes_test(is_admin)
+def price_list_create(request):
+    """Создание прайс-листа"""
+    if request.method == 'POST':
+        name = request.POST.get('name')
+        description = request.POST.get('description', '')
+        
+        multiplier_str = request.POST.get('multiplier', '1.00').replace(',', '.')
+        try:
+            multiplier = Decimal(multiplier_str)
+        except:
+            multiplier = Decimal('1.00')
+        
+        if name:
+            price_list = PriceList.objects.create(
+                name=name,
+                description=description,
+                multiplier=multiplier,
+                is_active=True
+            )
+            messages.success(request, f'Прайс-лист "{name}" успешно создан')
+            return redirect('price_list_edit', pk=price_list.pk)
+        else:
+            messages.error(request, 'Название прайс-листа обязательно')
+    
+    return render(request, 'cash_app/price_list_form.html', {'title': 'Создание прайс-листа'})
+
+
+@login_required
+@user_passes_test(is_admin)
+def price_list_edit(request, pk):
+    """Редактирование прайс-листа"""
+    price_list = get_object_or_404(PriceList, pk=pk)
+    products = Product.objects.all().order_by('name')
+    
+    existing_items = {item.product_id: item for item in price_list.items.all()}
+    
+    if request.method == 'POST':
+        price_list.name = request.POST.get('name')
+        price_list.description = request.POST.get('description', '')
+        
+        multiplier_str = request.POST.get('multiplier', '1.00').replace(',', '.')
+        try:
+            price_list.multiplier = Decimal(multiplier_str)
+        except:
+            price_list.multiplier = Decimal('1.00')
+        
+        price_list.is_active = request.POST.get('is_active') == 'on'
+        price_list.save()
+        
+        price_list.items.all().delete()
+        
+        product_ids = request.POST.getlist('product_ids')
+        custom_prices = request.POST.getlist('custom_prices')
+        
+        for i, product_id in enumerate(product_ids):
+            custom_price_str = custom_prices[i].replace(',', '.') if i < len(custom_prices) and custom_prices[i] else ''
+            custom_price = None
+            if custom_price_str:
+                try:
+                    custom_price = Decimal(custom_price_str)
+                except:
+                    custom_price = None
+            
+            PriceListItem.objects.create(
+                price_list=price_list,
+                product_id=product_id,
+                custom_price=custom_price
+            )
+        
+        messages.success(request, f'Прайс-лист "{price_list.name}" успешно обновлен')
+        return redirect('price_list_list')
+    
+    context = {
+        'title': 'Редактирование прайс-листа',
+        'price_list': price_list,
+        'products': products,
+        'existing_items': existing_items,
+    }
+    return render(request, 'cash_app/price_list_form.html', context)
+
+
+@login_required
+@user_passes_test(is_admin)
+def price_list_delete(request, pk):
+    """Удаление прайс-листа"""
+    price_list = get_object_or_404(PriceList, pk=pk)
+    
+    if request.method == 'POST':
+        name = price_list.name
+        price_list.delete()
+        messages.success(request, f'Прайс-лист "{name}" удален')
+        return redirect('price_list_list')
+    
+    return render(request, 'cash_app/price_list_confirm_delete.html', {'price_list': price_list})
+
+
+# Функции для управления пользователями
+@login_required
+@user_passes_test(is_admin)
+def user_list(request):
+    """Список пользователей"""
+    users = User.objects.filter(is_superuser=False).select_related('profile')
+    return render(request, 'cash_app/user_list.html', {'users': users})
+
+
+@login_required
+@user_passes_test(is_admin)
+def create_user(request):
+    """Создание нового пользователя"""
+    stores = StoreAddress.objects.filter(is_active=True)
+    
+    if request.method == 'POST':
+        username = request.POST.get('username')
+        password = request.POST.get('password')
+        password2 = request.POST.get('password2')
+        store_id = request.POST.get('store_id')
+        position = request.POST.get('position', 'Кассир')
+        
+        if not username or not password:
+            messages.error(request, 'Логин и пароль обязательны')
+            return redirect('create_user')
+        
+        if password != password2:
+            messages.error(request, 'Пароли не совпадают')
+            return redirect('create_user')
+        
+        if User.objects.filter(username=username).exists():
+            messages.error(request, 'Пользователь с таким логином уже существует')
+            return redirect('create_user')
+        
+        user = User.objects.create_user(
+            username=username,
+            password=password,
+            is_staff=False,
+            is_superuser=False
+        )
+        
+        store = None
+        if store_id:
+            try:
+                store = StoreAddress.objects.get(pk=store_id)
+            except StoreAddress.DoesNotExist:
+                pass
+        
+        UserProfile.objects.create(
+            user=user,
+            store=store,
+            position=position
+        )
+        
+        messages.success(request, f'Пользователь {username} успешно создан')
+        return redirect('user_list')
+    
+    context = {
+        'stores': stores,
+        'title': 'Создание нового сотрудника'
+    }
+    return render(request, 'cash_app/create_user.html', context)
+
+
+@login_required
+@user_passes_test(is_admin)
+def select_price_list(request):
+    """Выбор прайс-листа для продажи"""
+    if request.method == 'POST':
+        price_list_id = request.POST.get('price_list_id')
+        if price_list_id:
+            try:
+                price_list = PriceList.objects.get(pk=price_list_id, is_active=True)
+                request.session['selected_price_list'] = price_list_id
+                messages.success(request, f'Выбран прайс-лист: {price_list.name}')
+            except PriceList.DoesNotExist:
+                messages.error(request, 'Прайс-лист не найден')
+        else:
+            if 'selected_price_list' in request.session:
+                del request.session['selected_price_list']
+                request.session.modified = True
+            messages.success(request, 'Выбран обычный прайс-лист')
+    
+    return redirect('sale')
+
+
+@login_required
+@user_passes_test(is_admin)
+def select_store(request):
+    """Выбор склада для просмотра (только для админа)"""
+    if request.method == 'POST':
+        store_id = request.POST.get('store_id')
+        if store_id:
+            request.session['selected_store'] = store_id
+            messages.success(request, 'Склад выбран')
+        else:
+            if 'selected_store' in request.session:
+                del request.session['selected_store']
+            messages.success(request, 'Показаны все склады')
+        request.session.modified = True
+    return redirect('product_list')

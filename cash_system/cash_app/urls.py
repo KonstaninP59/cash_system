@@ -2,6 +2,7 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    path('sale/select-price-list/', views.select_price_list, name='select_price_list'),
     # Базовые страницы
     path('', views.index, name='index'),
     path('login/', views.login_view, name='login'),
@@ -62,4 +63,21 @@ urlpatterns = [
     path('payment/success/', views.payment_success, name='payment_success'),
     path('payment/status/', views.terminal_status, name='terminal_status'),
     path('payment/callback/', views.payment_callback, name='payment_callback'),
+
+    # Прайс-листы (только для администратора)
+    path('price-lists/', views.price_list_list, name='price_list_list'),
+    path('price-lists/create/', views.price_list_create, name='price_list_create'),
+    path('price-lists/<int:pk>/edit/', views.price_list_edit, name='price_list_edit'),
+    path('price-lists/<int:pk>/delete/', views.price_list_delete, name='price_list_delete'),
+
+    # Управление пользователями (только для администратора)
+    path('users/', views.user_list, name='user_list'),
+    path('users/create/', views.create_user, name='create_user'),
+    path('store/select/', views.select_store, name='select_store'),
+
+    # Управление складами
+    path('stores/', views.store_list, name='store_list'),
+    path('stores/create/', views.store_create, name='store_create'),
+    path('stores/<int:pk>/edit/', views.store_edit, name='store_edit'),
+    path('stores/<int:pk>/delete/', views.store_delete, name='store_delete'),
 ]

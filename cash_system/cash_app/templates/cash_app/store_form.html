@@ -1,0 +1,63 @@
+{% extends 'cash_app/base.html' %}
+{% load static %}
+
+{% block title %} - {{ title }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0"><i class="bi bi-shop"></i> {{ title }}</h4>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+                    
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Название склада</label>
+                        <input type="text" class="form-control" id="name" name="name" 
+                               value="{{ store.name|default:'' }}" required>
+                        <small class="text-muted">Например: "Основной склад", "Склад на Ленина"</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="address" class="form-label">Адрес</label>
+                        <input type="text" class="form-control" id="address" name="address" 
+                               value="{{ store.address|default:'' }}" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="city" class="form-label">Город</label>
+                        <input type="text" class="form-control" id="city" name="city" 
+                               value="{{ store.city|default:'' }}">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="phone" class="form-label">Телефон</label>
+                        <input type="text" class="form-control" id="phone" name="phone" 
+                               value="{{ store.phone|default:'' }}">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input type="checkbox" class="form-check-input" id="is_active" name="is_active" 
+                                   {% if store.is_active or not store %}checked{% endif %}>
+                            <label class="form-check-label" for="is_active">Склад активен</label>
+                        </div>
+                    </div>
+                    
+                    <div class="d-flex justify-content-between">
+                        <a href="{% url 'store_list' %}" class="btn btn-secondary">
+                            <i class="bi bi-arrow-left"></i> Назад
+                        </a>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-lg"></i> Сохранить
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -5,8 +5,47 @@
 
 {% block content %}
 <div class="row">
-    <!-- Левая колонка - товары по категориям -->
+    <!-- Левая колонка - выбор прайс-листа и товары -->
     <div class="col-md-8">
+        <!-- Блок выбора прайс-листа -->
+        <div class="card shadow mb-4">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0"><i class="bi bi-tags"></i> Выбор прайс-листа</h5>
+            </div>
+            <div class="card-body">
+                <form method="post" action="{% url 'select_price_list' %}" class="d-flex flex-wrap gap-3 align-items-end">
+                    {% csrf_token %}
+                    <div class="flex-grow-1">
+                        <label class="form-label">Прайс-лист</label>
+                        <select name="price_list_id" class="form-select" required>
+                            <option value="">-- Выберите прайс-лист --</option>
+                            {% for pl in active_price_lists %}
+                                <option value="{{ pl.id }}" {% if selected_price_list and selected_price_list.id == pl.id %}selected{% endif %}>
+                                    {{ pl.name }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-lg"></i> Выбрать
+                        </button>
+                    </div>
+                </form>
+                
+                {% if selected_price_list %}
+                    <div class="mt-3 alert alert-success">
+                        <i class="bi bi-check-circle"></i>
+                        Активен прайс-лист: <strong>{{ selected_price_list.name }}</strong>
+                        {% if selected_price_list.description %}
+                            <br><small>{{ selected_price_list.description }}</small>
+                        {% endif %}
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- Доступные товары -->
         <div class="card shadow mb-4">
             <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><i class="bi bi-box"></i> Доступные товары</h5>
@@ -17,11 +56,17 @@
                 {% endif %}
             </div>
             <div class="card-body">
-                {% if not categories %}
-                <div class="text-center py-4">
-                    <i class="bi bi-box fs-1 d-block text-muted"></i>
-                    <p class="text-muted">Нет доступных товаров для продажи</p>
-                </div>
+                {% if not selected_price_list %}
+                    <div class="text-center py-5">
+                        <i class="bi bi-tags fs-1 d-block text-muted mb-3"></i>
+                        <h5 class="text-muted">Выберите прайс-лист</h5>
+                        <p class="text-muted">Для начала продаж выберите прайс-лист из списка выше</p>
+                    </div>
+                {% elif not categories %}
+                    <div class="text-center py-4">
+                        <i class="bi bi-box fs-1 d-block text-muted"></i>
+                        <p class="text-muted">В выбранном прайс-листе нет доступных товаров</p>
+                    </div>
                 {% endif %}
                 
                 {% for category, products in categories.items %}
@@ -58,9 +103,9 @@
                         {% endif %}
                     </div>
                     
-                    <!-- Товары категории -->
-                    <div class="category-content row mt-2 {% if category.id|stringformat:'i' not in collapsed_categories %}show{% endif %}"
-                        id="category-content-{{ category.id|default:'0' }}">
+                    <!-- Товары категории - по умолчанию свернуты -->
+                    <div class="category-content row mt-2 {% if category.id|stringformat:'i' in collapsed_categories %}show{% endif %}"
+                         id="category-content-{{ category.id|default:'0' }}">
                         {% for product in products %}
                         <div class="col-md-4 mb-3">
                             <div class="card h-100 {% if product.is_expiring_soon %}border-warning{% endif %}">
@@ -75,7 +120,7 @@
                                                 {{ product.quantity|floatformat:0 }} {{ product.get_unit_display }}
                                             {% endif %}
                                         </span><br>
-                                        <strong>Цена: {{ product.price|floatformat:2 }} ₽/{{ product.get_unit_display }}</strong><br>
+                                        <strong>Цена: {{ product.display_price|floatformat:2 }} ₽/{{ product.get_unit_display }}</strong><br>
                                         <small class="text-muted">Годен до: {{ product.expiration_date|date:"d.m.Y" }}</small>
                                     </p>
                                     
