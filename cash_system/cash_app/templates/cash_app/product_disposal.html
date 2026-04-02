@@ -14,13 +14,38 @@
                 <div class="alert alert-danger">
                     <h5 class="alert-heading">Товар: {{ product.name }}</h5>
                     <p class="mb-0">
-                        Срок годности истек: {{ product.expiration_date|date:"d.m.Y" }}<br>
-                        Доступно на складе: <strong>{{ product.quantity }} {{ product.get_unit_display }}</strong>
+                        Срок годности истек: {{ product.expiration_date|date:"d.m.Y" }}
                     </p>
                 </div>
                 
+                <!-- Отображение остатков на складах -->
+                {% if store_products %}
+                <div class="alert alert-info">
+                    <strong><i class="bi bi-shop"></i> Остатки на складах:</strong>
+                    <ul class="mb-0 mt-2">
+                        {% for sp in store_products %}
+                            <li>{{ sp.store.name }}: {{ sp.quantity }} {{ product.get_unit_display }}</li>
+                        {% empty %}
+                            <li>Нет остатков</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+                
                 <form method="post">
                     {% csrf_token %}
+                    
+                    <!-- Выбор склада -->
+                    <div class="mb-3">
+                        <label for="store_id" class="form-label">Склад для списания</label>
+                        <select name="store_id" id="store_id" class="form-select" required>
+                            <option value="">-- Выберите склад --</option>
+                            {% for store in stores %}
+                                <option value="{{ store.id }}">{{ store.name }} ({{ store.address }})</option>
+                            {% endfor %}
+                        </select>
+                        <small class="text-muted">Выберите склад, с которого будет списан товар</small>
+                    </div>
                     
                     {% for field in form %}
                     <div class="mb-3">
@@ -53,4 +78,33 @@
         </div>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const storeSelect = document.getElementById('store_id');
+    const quantityInput = document.querySelector('input[name="quantity"]');
+    
+    if (storeSelect && quantityInput) {
+        storeSelect.addEventListener('change', function() {
+            const storeId = this.value;
+            const productId = '{{ product.id }}';
+            
+            if (storeId && productId) {
+                fetch(`/api/store-product/${storeId}/${productId}/`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.quantity !== undefined) {
+                            quantityInput.max = data.quantity;
+                            const helpText = document.querySelector('.form-text');
+                            if (helpText) {
+                                helpText.innerHTML = `Доступно на складе: ${data.quantity} {{ product.get_unit_display }}`;
+                            }
+                        }
+                    })
+                    .catch(error => console.error('Ошибка:', error));
+            }
+        });
+    }
+});
+</script>
 {% endblock %}

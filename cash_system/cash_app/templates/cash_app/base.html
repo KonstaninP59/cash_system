@@ -33,7 +33,7 @@
     <div class="app-topbar-wrap">
         <div class="container-xxl">
             <nav class="navbar navbar-expand-xl app-topbar">
-                <a class="navbar-brand app-brand" href="{% if user.is_superuser or user.is_staff %}{% url 'product_list' %}{% else %}{% url 'sale' %}{% endif %}">
+                <a class="navbar-brand app-brand" href="{% url 'index' %}">
                     <span class="app-brand-icon">
                         <i class="bi bi-grid-1x2"></i>
                     </span>
@@ -55,51 +55,19 @@
 
                 <div class="collapse navbar-collapse order-xl-2" id="mainNav">
                     <ul class="navbar-nav mx-auto app-nav">
-                        <!-- Склад видят только администраторы -->
+                        <!-- Склад видят только администраторы - без стрелки -->
                         {% if user.is_superuser or user.is_staff %}
-                        <li class="nav-item dropdown">
-                            <a class="nav-link dropdown-toggle {% if request.resolver_match.url_name == 'product_list' %}active{% endif %}"
-                               href="#" data-bs-toggle="dropdown">
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.resolver_match.url_name == 'product_list' %}active{% endif %}"
+                               href="{% url 'product_list' %}">
                                 <i class="bi bi-box-seam"></i>
                                 <span>Склад</span>
                             </a>
-                            <ul class="dropdown-menu app-dropdown">
-                                <!-- Кнопка для выбора склада -->
-                                <li>
-                                    <form method="post" action="{% url 'select_store' %}" class="px-3 py-2">
-                                        {% csrf_token %}
-                                        <label class="form-label small">Выберите склад:</label>
-                                        <select name="store_id" class="form-select form-select-sm mb-2" onchange="this.form.submit()">
-                                            <option value="">Все склады</option>
-                                            {% for store in stores %}
-                                                <option value="{{ store.id }}" {% if selected_store and selected_store.id == store.id %}selected{% endif %}>
-                                                    {{ store.name }}
-                                                </option>
-                                            {% endfor %}
-                                        </select>
-                                    </form>
-                                </li>
-                                <li><hr class="dropdown-divider"></li>
-                                <li>
-                                    <a class="dropdown-item" href="{% url 'product_list' %}">
-                                        <i class="bi bi-grid"></i> Управление товарами
-                                    </a>
-                                </li>
-                                <li>
-                                    <a class="dropdown-item" href="{% url 'store_list' %}">
-                                        <i class="bi bi-shop"></i> Управление складами
-                                    </a>
-                                </li>
-                                <li>
-                                    <a class="dropdown-item" href="{% url 'product_create' %}">
-                                        <i class="bi bi-plus-circle"></i> Добавить товар
-                                    </a>
-                                </li>
-                            </ul>
                         </li>
                         {% endif %}
                         
-                        <!-- Продажи видят все -->
+                        <!-- Продажи видят только кассиры -->
+                        {% if not user.is_superuser and not user.is_staff %}
                         <li class="nav-item">
                             <a class="nav-link {% if request.resolver_match.url_name == 'sale' %}active{% endif %}"
                                href="{% url 'sale' %}">
@@ -107,6 +75,7 @@
                                 <span>Продажи</span>
                             </a>
                         </li>
+                        {% endif %}
                         
                         <!-- История видят все -->
                         <li class="nav-item">
@@ -126,9 +95,10 @@
                             </a>
                         </li>
 
+                        <!-- Управление видят только администраторы -->
                         {% if user.is_superuser or user.is_staff %}
                         <li class="nav-item dropdown">
-                            <a class="nav-link dropdown-toggle {% if request.resolver_match.url_name == 'coupon_list' or request.resolver_match.url_name == 'category_list' or request.resolver_match.url_name == 'price_list_list' or request.resolver_match.url_name == 'user_list' %}active{% endif %}"
+                            <a class="nav-link dropdown-toggle {% if request.resolver_match.url_name == 'coupon_list' or request.resolver_match.url_name == 'category_list' or request.resolver_match.url_name == 'price_list_list' or request.resolver_match.url_name == 'user_list' or request.resolver_match.url_name == 'store_list' %}active{% endif %}"
                                href="#" data-bs-toggle="dropdown">
                                 <i class="bi bi-sliders"></i>
                                 <span>Управление</span>
@@ -147,6 +117,11 @@
                                 <li>
                                     <a class="dropdown-item" href="{% url 'price_list_list' %}">
                                         <i class="bi bi-tags"></i> Прайс-листы
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item" href="{% url 'store_list' %}">
+                                        <i class="bi bi-shop"></i> Склады
                                     </a>
                                 </li>
                                 <li>

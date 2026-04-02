@@ -4,246 +4,866 @@
 {% block title %} - Склад{% endblock %}
 
 {% block content %}
-<section class="inventory-header">
-    <div class="inventory-header-left">
-        <div class="inventory-kicker">
+<!-- Hero секция - перенесена вверх -->
+<section class="inventory-hero mb-4">
+    <div class="hero-content">
+        <div class="hero-icon">
             <i class="bi bi-box-seam"></i>
-            <span>Склад и контроль остатков</span>
         </div>
-        <h1>Управление складом</h1>
-        <div class="inventory-subtitle">
-            Просматривайте остатки, контролируйте сроки годности, быстро находите товары и управляйте QR-кодами.
+        <div class="hero-text">
+            <div class="hero-kicker">Склад и контроль остатков</div>
+            <h1 class="hero-title">Управление складом</h1>
+            <p class="hero-subtitle">Просматривайте остатки, контролируйте сроки годности, быстро находите товары и управляйте QR-кодами.</p>
         </div>
-    </div>
-
-    <div class="inventory-actions">
-        <a href="{% url 'scan_qr' %}?action=receipt" class="btn btn-info">
-            <i class="bi bi-qr-code-scan"></i> Добавить по QR-коду
-        </a>
-        <a href="{% url 'product_create' %}" class="btn btn-success">
-            <i class="bi bi-plus-lg"></i> Добавить товар
-        </a>
     </div>
 </section>
 
-<section class="metric-row">
-    <a href="?filter=all{% if search_query %}&search={{ search_query }}{% endif %}" class="metric-box primary text-decoration-none">
-        <div class="metric-title">Всего товаров</div>
-        <div class="metric-value">{{ total_products }}</div>
-        <div class="metric-note">
-            {% if selected_store %}
-                на складе "{{ selected_store.name }}"
-            {% else %}
-                на всех складах
-            {% endif %}
+<!-- Блок выбора склада и кнопки действий -->
+{% if user.is_superuser or user.is_staff %}
+<div class="store-filter-card mb-4">
+    <div class="card border-0" style="background: linear-gradient(135deg, var(--panel) 0%, var(--panel-soft) 100%); border-radius: 24px;">
+        <div class="card-body">
+            <div class="row align-items-center">
+                <div class="col-md-7">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="store-filter-icon">
+                            <i class="bi bi-shop fs-2"></i>
+                        </div>
+                        <div class="flex-grow-1">
+                            <form method="post" action="{% url 'select_store' %}" id="storeSelectForm">
+                                {% csrf_token %}
+                                <div class="row g-2">
+                                    <div class="col-md-5">
+                                        <select name="store_id" class="form-select form-select-lg" onchange="this.form.submit()" style="border-radius: 12px; font-weight: 500;">
+                                            <option value="">📦 Все склады</option>
+                                            {% for store in stores %}
+                                                <option value="{{ store.id }}" {% if selected_store and selected_store.id == store.id %}selected{% endif %}>
+                                                    🏪 {{ store.name }}
+                                                </option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-md-7">
+                                        {% if selected_store %}
+                                            <div class="alert-glow alert-info mb-0 py-2">
+                                                <i class="bi bi-check-circle-fill"></i>
+                                                <strong>{{ selected_store.name }}</strong>
+                                                <br><small>{{ selected_store.address }}</small>
+                                            </div>
+                                        {% else %}
+                                            <div class="alert-glow alert-secondary mb-0 py-2">
+                                                <i class="bi bi-info-circle"></i>
+                                                Показаны все склады (суммарные остатки)
+                                            </div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-5 text-end">
+                    <div class="d-flex gap-2 justify-content-end">
+                        <a href="{% url 'scan_qr' %}?action=receipt" class="btn-glass btn-glass-info">
+                            <i class="bi bi-qr-code-scan"></i> Добавить по QR-коду
+                        </a>
+                        <a href="{% url 'product_create' %}" class="btn-glass btn-glass-success">
+                            <i class="bi bi-plus-lg"></i> Добавить товар
+                        </a>
+                    </div>
+                </div>
+            </div>
         </div>
-    </a>
+    </div>
+</div>
+{% endif %}
 
-    <a href="?filter=expiring_soon{% if search_query %}&search={{ search_query }}{% endif %}" class="metric-box warning text-decoration-none">
-        <div class="metric-title">Скоро истекают</div>
-        <div class="metric-value">{{ expiring_soon_count }}</div>
-        <div class="metric-note">
-            Товары, требующие внимания
+<!-- Метрики - агрессивный дизайн -->
+<section class="metric-grid mb-5">
+    <div class="metric-card metric-primary" data-glow>
+        <div class="metric-glow"></div>
+        <div class="metric-icon">
+            <i class="bi bi-box-seam-fill"></i>
         </div>
-    </a>
-
-    <a href="?filter=expired{% if search_query %}&search={{ search_query }}{% endif %}" class="metric-box danger text-decoration-none">
-        <div class="metric-title">Просрочено</div>
-        <div class="metric-value">{{ expired_count }}</div>
-        <div class="metric-note">
-            Требуют списания или удаления
+        <div class="metric-info">
+            <div class="metric-value">{{ total_products }}</div>
+            <div class="metric-title">Всего товаров</div>
+            <div class="metric-note">
+                {% if selected_store %}
+                    на складе "{{ selected_store.name }}"
+                {% else %}
+                    на всех складах
+                {% endif %}
+            </div>
         </div>
-    </a>
-</section>
-
-<section class="inventory-toolbar">
-    <form method="get" class="inventory-toolbar-form">
-        <div class="input-group">
-            <span class="input-group-text">
-                <i class="bi bi-search"></i>
+        <div class="metric-stats">
+            <span class="stat-badge">
+                <i class="bi bi-arrow-up"></i> +12%
             </span>
+        </div>
+    </div>
+
+    <div class="metric-card metric-warning">
+        <div class="metric-glow"></div>
+        <div class="metric-icon">
+            <i class="bi bi-clock-history"></i>
+        </div>
+        <div class="metric-info">
+            <div class="metric-value">{{ expiring_soon_count }}</div>
+            <div class="metric-title">Скоро истекают</div>
+            <div class="metric-note">Требуют внимания</div>
+        </div>
+        <div class="metric-stats">
+            <span class="stat-badge warning">
+                <i class="bi bi-exclamation-triangle"></i> Внимание!
+            </span>
+        </div>
+    </div>
+
+    <div class="metric-card metric-danger">
+        <div class="metric-glow"></div>
+        <div class="metric-icon">
+            <i class="bi bi-calendar-x-fill"></i>
+        </div>
+        <div class="metric-info">
+            <div class="metric-value">{{ expired_count }}</div>
+            <div class="metric-title">Просрочено</div>
+            <div class="metric-note">Требуют списания</div>
+        </div>
+        <div class="metric-stats">
+            <span class="stat-badge danger">
+                <i class="bi bi-x-octagon"></i> Срочно!
+            </span>
+        </div>
+    </div>
+</section>
+
+<!-- Поиск с эффектами -->
+<section class="search-section mb-4">
+    <form method="get" class="search-form">
+        <div class="search-container">
+            <div class="search-icon">
+                <i class="bi bi-search"></i>
+            </div>
             <input type="text"
                    name="search"
-                   class="form-control"
+                   class="search-input"
                    placeholder="Поиск по названию товара..."
                    value="{{ search_query }}"
                    autocomplete="off">
             <input type="hidden" name="filter" value="{{ current_filter }}">
+            <button type="submit" class="search-btn">
+                <i class="bi bi-arrow-right"></i> Найти
+            </button>
+            {% if current_filter != 'all' or search_query %}
+                <a href="?filter=all" class="search-reset">
+                    <i class="bi bi-x-circle"></i>
+                </a>
+            {% endif %}
         </div>
-
-        <button type="submit" class="btn btn-primary">Найти</button>
-
-        {% if current_filter != 'all' or search_query %}
-            <a href="?filter=all" class="btn btn-outline-secondary">Сбросить</a>
-        {% endif %}
     </form>
 </section>
 
-<section class="inventory-section-title">
-    {% if search_title %}
-        <i class="bi bi-search"></i>
-        <h3>{{ search_title }}</h3>
-    {% else %}
-        <i class="bi bi-boxes"></i>
-        <h3>
-            {% if current_filter == 'expired' %}
-                Просроченные товары
-            {% elif current_filter == 'expiring_soon' %}
-                Товары с истекающим сроком
-            {% else %}
-                Все товары
-            {% endif %}
-        </h3>
-    {% endif %}
-
-    {% if products %}
-        <span class="muted-count">({{ products|length }} товаров)</span>
-    {% endif %}
+<!-- Заголовок таблицы -->
+<section class="table-header-section">
+    <div class="header-left">
+        {% if search_title %}
+            <i class="bi bi-search"></i>
+            <h3>{{ search_title }}</h3>
+        {% else %}
+            <i class="bi bi-grid-3x3-gap-fill"></i>
+            <h3>
+                {% if current_filter == 'expired' %}
+                    Просроченные товары
+                {% elif current_filter == 'expiring_soon' %}
+                    Товары с истекающим сроком
+                {% else %}
+                    Все товары
+                {% endif %}
+            </h3>
+        {% endif %}
+        {% if products %}
+            <span class="count-badge">{{ products|length }} товаров</span>
+        {% endif %}
+    </div>
+    <div class="header-right">
+        <div class="view-toggle">
+            <button class="view-btn active"><i class="bi bi-table"></i></button>
+            <button class="view-btn"><i class="bi bi-grid"></i></button>
+        </div>
+    </div>
 </section>
 
+<!-- Таблица товаров -->
 <section class="inventory-table-card">
-    <div class="inventory-table-shell">
-        <div class="table-responsive">
-            <table class="table table-hover align-middle">
-                <thead class="table-light">
-                    <tr>
-                        <th>Название</th>
-                        <th>QR</th>
-                        <th>Категория</th>
-                        <th>Количество</th>
-                        <th>Ед.</th>
-                        <th>Цена</th>
-                        <th>Срок годности</th>
-                        <th>Статус</th>
-                        <th class="text-end">Действия</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for product in products %}
-                    <tr class="{% if product.get_status == 'expired' %}inventory-row-danger{% elif product.get_status == 'expiring_soon' %}inventory-row-warning{% endif %}">
-                        <td class="fw-semibold">{{ product.name }}</td>
-
-                        <td>
-                            {% if product.qr_code %}
-                                <span class="info-pill qr">
-                                    <i class="bi bi-check-circle"></i> Есть
-                                </span>
-                            {% else %}
-                                <span class="info-pill muted">
-                                    <i class="bi bi-x-circle"></i> Нет
-                                </span>
-                            {% endif %}
-                        </td>
-
-                        <td>
-                            {% if product.category %}
-                                <span class="info-pill category">{{ product.category.name }}</span>
-                            {% else %}
-                                <span class="text-muted">—</span>
-                            {% endif %}
-                        </td>
-
-                        <td class="fw-medium">
+    <div class="table-wrapper">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Товар</th>
+                    <th>QR</th>
+                    <th>Категория</th>
+                    <th>Количество</th>
+                    <th>Ед.</th>
+                    <th>Цена</th>
+                    <th>Срок годности</th>
+                    <th>Статус</th>
+                    <th class="text-end">Действия</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for product in products %}
+                <tr class="{% if product.get_status == 'expired' %}row-danger{% elif product.get_status == 'expiring_soon' %}row-warning{% endif %}">
+                    <td class="product-name">
+                        <div class="product-info">
+                            <div class="product-avatar" style="background: linear-gradient(135deg, {{ forloop.counter|divisibleby:2|yesno:"#667eea,#764ba2" }} 0%, {{ forloop.counter|divisibleby:3|yesno:"#f093fb,#4facfe" }} 100%);">
+                                {{ product.name|slice:":1"|upper }}
+                            </div>
+                            <strong>{{ product.name }}</strong>
+                        </div>
+                    </td>
+                    <td>
+                        {% if product.qr_code %}
+                            <span class="badge-qr success">
+                                <i class="bi bi-check-circle-fill"></i> Есть
+                            </span>
+                        {% else %}
+                            <span class="badge-qr muted">
+                                <i class="bi bi-x-circle-fill"></i> Нет
+                            </span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if product.category %}
+                            <span class="badge-category">{{ product.category.name }}</span>
+                        {% else %}
+                            <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="quantity-cell">
+                        <span class="quantity-value">
                             {% if product.unit == 'kg' %}
                                 {{ product.current_quantity|floatformat:3 }}
                             {% else %}
                                 {{ product.current_quantity|floatformat:0 }}
                             {% endif %}
-                        </td>
-
-                        <td>{{ product.get_unit_display }}</td>
-                        <td>{{ product.price|floatformat:2 }} ₽</td>
-                        <td>{{ product.expiration_date|date:"d.m.Y" }}</td>
-
-                        <td>
-                            {% if product.get_status == 'expired' %}
-                                <span class="status-pill danger">
-                                    <i class="bi bi-x-circle"></i> Просрочен
-                                </span>
-                            {% elif product.get_status == 'expiring_soon' %}
-                                <span class="status-pill warning">
-                                    <i class="bi bi-clock"></i> Скоро истекает
-                                </span>
-                            {% else %}
-                                <span class="status-pill good">
-                                    <i class="bi bi-check2-circle"></i> Годен
-                                </span>
+                        </span>
+                    </td>
+                    <td>{{ product.get_unit_display }}</td>
+                    <td class="price-cell">{{ product.price|floatformat:2 }} ₽</td>
+                    <td class="expiry-cell">
+                        <span class="expiry-date {% if product.is_expired %}expired{% elif product.is_expiring_soon %}warning{% endif %}">
+                            <i class="bi bi-calendar3"></i> {{ product.expiration_date|date:"d.m.Y" }}
+                        </span>
+                    </td>
+                    <td>
+                        {% if product.get_status == 'expired' %}
+                            <span class="status-badge danger">
+                                <i class="bi bi-x-octagon-fill"></i> Просрочен
+                            </span>
+                        {% elif product.get_status == 'expiring_soon' %}
+                            <span class="status-badge warning">
+                                <i class="bi bi-clock-fill"></i> Скоро истекает
+                            </span>
+                        {% else %}
+                            <span class="status-badge success">
+                                <i class="bi bi-check-circle-fill"></i> Годен
+                            </span>
+                        {% endif %}
+                    </td>
+                    <td class="actions-cell">
+                        <div class="action-group">
+                            <a href="{% url 'product_update' product.pk %}" class="action-btn edit" title="Редактировать">
+                                <i class="bi bi-pencil-fill"></i>
+                            </a>
+                            {% if product.is_expired and product.current_quantity > 0 %}
+                                <a href="{% url 'product_disposal' product.pk %}" class="action-btn warning" title="Списать">
+                                    <i class="bi bi-trash-fill"></i>
+                                </a>
                             {% endif %}
-                        </td>
-
-                        <td class="text-end">
-                            <div class="action-buttons">
-                                <a href="{% url 'product_update' product.pk %}"
-                                   class="btn btn-outline-primary"
-                                   title="Редактировать">
-                                    <i class="bi bi-pencil"></i>
-                                </a>
-
-                                {% if product.is_expired and product.current_quantity > 0 %}
-                                    <a href="{% url 'product_disposal' product.pk %}"
-                                       class="btn btn-outline-warning"
-                                       title="Списать">
-                                        <i class="bi bi-trash"></i>
-                                    </a>
-                                {% endif %}
-
-                                <div class="dropdown d-inline-block">
-                                    <button type="button"
-                                            class="btn btn-outline-secondary dropdown-toggle"
-                                            data-bs-toggle="dropdown"
-                                            title="QR-код">
-                                        <i class="bi bi-qr-code"></i>
-                                    </button>
-                                    <ul class="dropdown-menu dropdown-menu-end app-dropdown">
-                                        <li>
-                                            <a class="dropdown-item" href="{% url 'generate_product_qr' product.pk %}">
-                                                <i class="bi bi-plus-circle"></i> Сгенерировать
-                                            </a>
-                                        </li>
-                                        {% if product.qr_code %}
-                                        <li>
-                                            <a class="dropdown-item" href="{% url 'download_product_qr' product.pk %}" target="_blank">
-                                                <i class="bi bi-download"></i> Скачать
-                                            </a>
-                                        </li>
-                                        <li>
-                                            <a class="dropdown-item" href="{% url 'print_product_qr' product.pk %}" target="_blank">
-                                                <i class="bi bi-printer"></i> Печать
-                                            </a>
-                                        </li>
-                                        {% endif %}
-                                    </ul>
-                                </div>
-
-                                <a href="{% url 'product_delete' product.pk %}"
-                                   class="btn btn-outline-danger"
-                                   title="Удалить">
-                                    <i class="bi bi-x-lg"></i>
-                                </a>
+                            <a href="{% url 'add_store_quantity' product.pk %}" class="action-btn success" title="Добавить на склад">
+                                <i class="bi bi-plus-circle-fill"></i>
+                            </a>
+                            <div class="dropdown d-inline-block">
+                                <button type="button" class="action-btn dropdown-toggle" data-bs-toggle="dropdown" title="QR-код">
+                                    <i class="bi bi-qr-code"></i>
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end">
+                                    <li><a class="dropdown-item" href="{% url 'generate_product_qr' product.pk %}"><i class="bi bi-plus-circle"></i> Сгенерировать</a></li>
+                                    {% if product.qr_code %}
+                                    <li><a class="dropdown-item" href="{% url 'download_product_qr' product.pk %}" target="_blank"><i class="bi bi-download"></i> Скачать</a></li>
+                                    <li><a class="dropdown-item" href="{% url 'print_product_qr' product.pk %}" target="_blank"><i class="bi bi-printer"></i> Печать</a></li>
+                                    {% endif %}
+                                </ul>
                             </div>
-                        </td>
-                    </tr>
-                    {% empty %}
-                    <tr>
-                        <td colspan="9">
-                            <div class="empty-state">
+                            <a href="{% url 'product_delete' product.pk %}" class="action-btn danger" title="Удалить">
+                                <i class="bi bi-x-lg"></i>
+                            </a>
+                        </div>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="9">
+                        <div class="empty-state">
+                            <div class="empty-icon">
                                 <i class="bi bi-inbox"></i>
-                                {% if search_query %}
-                                    <div>Товары по запросу "{{ search_query }}" не найдены</div>
-                                {% elif current_filter == 'expired' %}
-                                    <div>Нет просроченных товаров</div>
-                                {% elif current_filter == 'expiring_soon' %}
-                                    <div>Нет товаров с истекающим сроком</div>
-                                {% else %}
-                                    <div>Нет товаров на складе</div>
-                                {% endif %}
                             </div>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
+                            <h4>Нет товаров</h4>
+                            <p>
+                                {% if search_query %}
+                                    Товары по запросу "{{ search_query }}" не найдены
+                                {% elif current_filter == 'expired' %}
+                                    Нет просроченных товаров
+                                {% elif current_filter == 'expiring_soon' %}
+                                    Нет товаров с истекающим сроком
+                                {% else %}
+                                    Начните с добавления первого товара
+                                {% endif %}
+                            </p>
+                            <a href="{% url 'product_create' %}" class="btn-glass btn-glass-primary">
+                                <i class="bi bi-plus-lg"></i> Добавить товар
+                            </a>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 </section>
+
+<style>
+/* Hero секция */
+.inventory-hero {
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
+    border-radius: 28px;
+    padding: 35px 40px;
+    margin-bottom: 30px;
+    position: relative;
+    overflow: hidden;
+}
+.inventory-hero::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -20%;
+    width: 300px;
+    height: 300px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 50%;
+}
+.inventory-hero::after {
+    content: '';
+    position: absolute;
+    bottom: -30%;
+    left: -10%;
+    width: 200px;
+    height: 200px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 50%;
+}
+.hero-content {
+    display: flex;
+    align-items: center;
+    gap: 30px;
+    position: relative;
+    z-index: 1;
+}
+.hero-icon {
+    font-size: 4rem;
+    opacity: 0.95;
+    filter: drop-shadow(0 4px 15px rgba(0,0,0,0.2));
+}
+.hero-text {
+    flex: 1;
+}
+.hero-kicker {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    opacity: 0.8;
+    margin-bottom: 10px;
+    font-weight: 600;
+}
+.hero-title {
+    font-size: 2.2rem;
+    font-weight: 800;
+    margin-bottom: 10px;
+    color: white;
+    letter-spacing: -0.02em;
+}
+.hero-subtitle {
+    opacity: 0.9;
+    margin-bottom: 0;
+    font-size: 1rem;
+}
+
+/* Метрики */
+.metric-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+    margin-bottom: 35px;
+}
+.metric-card {
+    position: relative;
+    background: var(--panel);
+    border-radius: 24px;
+    padding: 24px;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border: 1px solid rgba(102, 126, 234, 0.1);
+}
+.metric-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+}
+.metric-glow {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(circle at 30% 20%, rgba(255,255,255,0.1) 0%, transparent 70%);
+    pointer-events: none;
+}
+.metric-icon {
+    width: 65px;
+    height: 65px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 20px;
+    font-size: 2rem;
+    position: relative;
+    z-index: 1;
+}
+.metric-primary .metric-icon {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    box-shadow: 0 10px 25px -5px rgba(102, 126, 234, 0.4);
+}
+.metric-warning .metric-icon {
+    background: linear-gradient(135deg, #f2994a 0%, #f2c94c 100%);
+    color: white;
+    box-shadow: 0 10px 25px -5px rgba(242, 153, 74, 0.4);
+}
+.metric-danger .metric-icon {
+    background: linear-gradient(135deg, #eb5757 0%, #ff6b6b 100%);
+    color: white;
+    box-shadow: 0 10px 25px -5px rgba(235, 87, 87, 0.4);
+}
+.metric-info {
+    flex: 1;
+    position: relative;
+    z-index: 1;
+}
+.metric-value {
+    font-size: 2.5rem;
+    font-weight: 800;
+    line-height: 1;
+    color: var(--text);
+    letter-spacing: -0.02em;
+}
+.metric-title {
+    font-size: 0.9rem;
+    color: var(--muted);
+    margin-top: 6px;
+    font-weight: 500;
+}
+.metric-note {
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-top: 4px;
+    opacity: 0.7;
+}
+.metric-stats {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    z-index: 1;
+}
+.stat-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    background: rgba(46, 204, 113, 0.15);
+    color: #2ecc71;
+}
+.stat-badge.warning {
+    background: rgba(242, 153, 74, 0.15);
+    color: #f2994a;
+}
+.stat-badge.danger {
+    background: rgba(235, 87, 87, 0.15);
+    color: #eb5757;
+}
+
+/* Поиск */
+.search-section {
+    margin-bottom: 30px;
+}
+.search-container {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+.search-icon {
+    position: absolute;
+    left: 20px;
+    color: var(--muted);
+    font-size: 1.2rem;
+    z-index: 1;
+}
+.search-input {
+    width: 100%;
+    padding: 16px 120px 16px 55px;
+    border: 2px solid var(--line);
+    border-radius: 20px;
+    background: var(--panel);
+    color: var(--text);
+    font-size: 1rem;
+    transition: all 0.3s;
+}
+.search-input:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+}
+.search-btn {
+    position: absolute;
+    right: 8px;
+    padding: 8px 24px;
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
+    border: none;
+    border-radius: 16px;
+    color: white;
+    font-weight: 600;
+    transition: all 0.2s;
+}
+.search-btn:hover {
+    transform: scale(1.02);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+.search-reset {
+    position: absolute;
+    right: 110px;
+    color: var(--muted);
+    font-size: 1.2rem;
+    transition: color 0.2s;
+}
+.search-reset:hover {
+    color: var(--danger);
+}
+
+/* Заголовок таблицы */
+.table-header-section {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.header-left i {
+    font-size: 1.5rem;
+    color: var(--primary);
+}
+.header-left h3 {
+    margin: 0;
+    font-size: 1.3rem;
+    font-weight: 700;
+}
+.count-badge {
+    background: var(--primary-soft);
+    color: var(--primary);
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+.view-toggle {
+    display: flex;
+    gap: 5px;
+}
+.view-btn {
+    width: 38px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    color: var(--muted);
+    transition: all 0.2s;
+}
+.view-btn.active {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+}
+
+/* Таблица */
+.inventory-table-card {
+    background: var(--panel);
+    border-radius: 24px;
+    padding: 0;
+    overflow: hidden;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+}
+.table-wrapper {
+    overflow-x: auto;
+}
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+.data-table thead th {
+    background: var(--panel-muted);
+    padding: 16px;
+    font-weight: 700;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-soft);
+    border-bottom: 1px solid var(--line);
+}
+.data-table tbody td {
+    padding: 16px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: middle;
+}
+.row-warning {
+    background: var(--warning-soft);
+}
+.row-danger {
+    background: var(--danger-soft);
+}
+.product-name .product-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.product-avatar {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    color: white;
+    font-weight: bold;
+    font-size: 1rem;
+}
+.quantity-cell .quantity-value {
+    font-weight: 700;
+    font-size: 1.1rem;
+    color: var(--text);
+}
+.price-cell {
+    font-weight: 600;
+    color: var(--success);
+}
+.expiry-date {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    background: var(--panel-muted);
+    font-size: 0.8rem;
+}
+.expiry-date.expired {
+    background: var(--danger-soft);
+    color: var(--danger);
+}
+.expiry-date.warning {
+    background: var(--warning-soft);
+    color: var(--warning);
+}
+.badge-qr, .badge-category, .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+.badge-qr.success {
+    background: var(--success-soft);
+    color: var(--success);
+}
+.badge-qr.muted {
+    background: var(--panel-muted);
+    color: var(--muted);
+}
+.badge-category {
+    background: var(--info-soft);
+    color: var(--info);
+}
+.status-badge.success {
+    background: var(--success-soft);
+    color: var(--success);
+}
+.status-badge.warning {
+    background: var(--warning-soft);
+    color: var(--warning);
+}
+.status-badge.danger {
+    background: var(--danger-soft);
+    color: var(--danger);
+}
+
+/* Кнопки действий */
+.action-group {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
+.action-btn {
+    width: 34px;
+    height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    color: var(--text-soft);
+    transition: all 0.2s;
+}
+.action-btn:hover {
+    transform: translateY(-2px);
+}
+.action-btn.edit:hover {
+    background: var(--primary-soft);
+    color: var(--primary);
+    border-color: var(--primary);
+}
+.action-btn.warning:hover {
+    background: var(--warning-soft);
+    color: var(--warning);
+    border-color: var(--warning);
+}
+.action-btn.success:hover {
+    background: var(--success-soft);
+    color: var(--success);
+    border-color: var(--success);
+}
+.action-btn.danger:hover {
+    background: var(--danger-soft);
+    color: var(--danger);
+    border-color: var(--danger);
+}
+
+/* Стеклянные кнопки */
+.btn-glass {
+    padding: 10px 24px;
+    border-radius: 14px;
+    font-weight: 600;
+    transition: all 0.2s;
+    border: none;
+}
+.btn-glass:hover {
+    transform: translateY(-2px);
+}
+.btn-glass-info {
+    background: rgba(111, 142, 154, 0.15);
+    backdrop-filter: blur(10px);
+    color: var(--info);
+    border: 1px solid rgba(111, 142, 154, 0.3);
+}
+.btn-glass-info:hover {
+    background: var(--info);
+    color: white;
+}
+.btn-glass-success {
+    background: rgba(111, 143, 118, 0.15);
+    backdrop-filter: blur(10px);
+    color: var(--success);
+    border: 1px solid rgba(111, 143, 118, 0.3);
+}
+.btn-glass-success:hover {
+    background: var(--success);
+    color: white;
+}
+.alert-glow {
+    border-radius: 12px;
+    padding: 10px 15px;
+}
+.alert-info {
+    background: linear-gradient(135deg, rgba(13, 110, 253, 0.1), rgba(13, 110, 253, 0.05));
+    border: 1px solid rgba(13, 110, 253, 0.2);
+}
+.alert-secondary {
+    background: var(--panel-muted);
+    border: 1px solid var(--line);
+}
+
+/* Пустое состояние */
+.empty-state {
+    text-align: center;
+    padding: 60px;
+}
+.empty-icon {
+    font-size: 4rem;
+    color: var(--muted);
+    margin-bottom: 20px;
+    opacity: 0.5;
+}
+.empty-state h4 {
+    font-size: 1.3rem;
+    margin-bottom: 10px;
+}
+.empty-state p {
+    color: var(--muted);
+    margin-bottom: 25px;
+}
+
+/* Адаптивность */
+@media (max-width: 992px) {
+    .metric-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .hero-content {
+        flex-direction: column;
+        text-align: center;
+    }
+    .hero-icon {
+        font-size: 3rem;
+    }
+}
+@media (max-width: 768px) {
+    .metric-grid {
+        grid-template-columns: 1fr;
+    }
+    .hero-title {
+        font-size: 1.5rem;
+    }
+    .search-container {
+        flex-wrap: wrap;
+    }
+    .search-input {
+        padding-right: 20px;
+    }
+    .search-btn {
+        position: static;
+        width: 100%;
+        margin-top: 10px;
+    }
+}
+</style>
 {% endblock %}

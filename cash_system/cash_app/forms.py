@@ -3,7 +3,7 @@ from decimal import Decimal
 from django import forms
 from django.contrib.auth.forms import AuthenticationForm
 
-from .models import Coupon, Product, SalesPlan
+from .models import Coupon, Product, SalesPlan, StoreAddress
 
 
 class LoginForm(AuthenticationForm):
@@ -23,7 +23,6 @@ class ProductForm(forms.ModelForm):
     
     class Meta:
         model = Product
-        # Убираем поле quantity, так как теперь количество хранится в StoreProduct
         fields = ['name', 'category', 'base_price', 'price', 'unit', 'expiration_date']
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Название товара'}),
@@ -41,6 +40,26 @@ class ProductForm(forms.ModelForm):
             'unit': 'Единица измерения',
             'expiration_date': 'Срок годности',
         }
+
+
+class StoreProductForm(forms.Form):
+    """Форма для добавления товара на склад"""
+    store = forms.ModelChoiceField(
+        label='Склад',
+        queryset=StoreAddress.objects.filter(is_active=True),
+        widget=forms.Select(attrs={'class': 'form-control'})
+    )
+    product = forms.ModelChoiceField(
+        label='Товар',
+        queryset=Product.objects.all(),
+        widget=forms.Select(attrs={'class': 'form-control'})
+    )
+    quantity = forms.DecimalField(
+        label='Количество',
+        min_value=0,
+        decimal_places=3,
+        widget=forms.NumberInput(attrs={'class': 'form-control', 'step': '0.001', 'min': '0'})
+    )
 
 
 class DisposalForm(forms.Form):

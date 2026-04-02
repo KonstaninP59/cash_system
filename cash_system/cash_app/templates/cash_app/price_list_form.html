@@ -11,7 +11,7 @@
                 <h4 class="mb-0"><i class="bi bi-tags"></i> {{ title }}</h4>
             </div>
             <div class="card-body">
-                <form method="post">
+                <form method="post" id="priceListForm">
                     {% csrf_token %}
                     
                     <div class="row">
@@ -35,7 +35,7 @@
                                 <label for="is_active" class="form-label">Статус</label>
                                 <div class="form-check mt-2">
                                     <input type="checkbox" class="form-check-input" id="is_active" name="is_active" 
-                                           {% if price_list.is_active %}checked{% endif %}>
+                                           {% if price_list.is_active or not price_list %}checked{% endif %}>
                                     <label class="form-check-label" for="is_active">Активен</label>
                                 </div>
                             </div>
@@ -61,7 +61,9 @@
                         <table class="table table-hover" id="products-table">
                             <thead class="table-light">
                                 <tr>
-                                    <th><input type="checkbox" id="select-all"></th>
+                                    <th style="width: 40px;">
+                                        <input type="checkbox" id="select-all" class="form-check-input">
+                                    </th>
                                     <th>Товар</th>
                                     <th>Категория</th>
                                     <th>Базовая цена</th>
@@ -72,21 +74,36 @@
                             <tbody>
                                 {% for product in products %}
                                 <tr>
-                                    <td>
-                                        <input type="checkbox" class="product-checkbox" name="product_ids" value="{{ product.id }}"
-                                               {% if product.id in existing_items.keys %}checked{% endif %}>
+                                    <td class="text-center">
+                                        <input type="checkbox" class="form-check-input product-checkbox" 
+                                               name="product_ids" value="{{ product.id }}"
+                                               {% if product.id in existing_items_keys %}checked{% endif %}>
                                     </td>
-                                    <td>{{ product.name }}</td>
+                                    <td>
+                                        <strong>{{ product.name }}</strong>
+                                        <br><small class="text-muted">{{ product.get_unit_display }}</small>
+                                    </td>
                                     <td>{{ product.category.name|default:"—" }}</td>
-                                    <td>{{ product.base_price|floatformat:2 }} ₽</td>
+                                    <td class="base-price-cell">{{ product.base_price|floatformat:2 }} ₽</td>
                                     <td>
                                         <input type="number" class="form-control form-control-sm custom-price" 
                                                name="custom_prices" 
                                                step="0.01" min="0"
-                                               style="width: 120px;"
-                                               value="{% if product.id in existing_items.keys %}{{ existing_items.product_id.custom_price|default:'' }}{% endif %}">
+                                               style="width: 130px;"
+                                               value="{% for item in price_list.items.all %}{% if item.product.id == product.id %}{{ item.custom_price|default:'' }}{% endif %}{% endfor %}"
+                                               {% for item in price_list.items.all %}{% if item.product.id == product.id %}{% else %}disabled{% endif %}{% endfor %}>
                                     </td>
-                                    <td class="calculated-price">—</td>
+                                    <td class="calculated-price fw-bold">—</td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="6" class="text-center py-4">
+                                        <i class="bi bi-box fs-1 d-block text-muted"></i>
+                                        <p class="text-muted">Нет товаров для добавления</p>
+                                        <a href="{% url 'product_create' %}" class="btn btn-primary btn-sm">
+                                            <i class="bi bi-plus-lg"></i> Создать товар
+                                        </a>
+                                    </td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
@@ -109,19 +126,44 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // Получаем existing_items_keys из контекста
+    const existingItemsKeys = {{ existing_items_keys|default:'[]' }};
+    
     // Выделить все товары
     const selectAll = document.getElementById('select-all');
     const checkboxes = document.querySelectorAll('.product-checkbox');
     
     if (selectAll) {
         selectAll.addEventListener('change', function() {
-            checkboxes.forEach(cb => cb.checked = selectAll.checked);
+            checkboxes.forEach(cb => {
+                cb.checked = selectAll.checked;
+                // Включаем/выключаем поле своей цены
+                const row = cb.closest('tr');
+                const customPriceInput = row.querySelector('.custom-price');
+                if (customPriceInput) {
+                    customPriceInput.disabled = !cb.checked;
+                    if (!cb.checked) {
+                        customPriceInput.value = '';
+                    }
+                }
+            });
             updateCalculatedPrices();
         });
     }
     
+    // Обработчик для каждого чекбокса
     checkboxes.forEach(cb => {
-        cb.addEventListener('change', updateCalculatedPrices);
+        cb.addEventListener('change', function() {
+            const row = this.closest('tr');
+            const customPriceInput = row.querySelector('.custom-price');
+            if (customPriceInput) {
+                customPriceInput.disabled = !this.checked;
+                if (!this.checked) {
+                    customPriceInput.value = '';
+                }
+            }
+            updateCalculatedPrices();
+        });
     });
     
     // Обновление рассчитанных цен
@@ -131,18 +173,26 @@ document.addEventListener('DOMContentLoaded', function() {
         
         rows.forEach(row => {
             const checkbox = row.querySelector('.product-checkbox');
-            const basePrice = parseFloat(row.cells[3].innerText) || 0;
+            const basePriceCell = row.querySelector('.base-price-cell');
             const customPriceInput = row.querySelector('.custom-price');
             const calculatedCell = row.querySelector('.calculated-price');
             
             if (checkbox && checkbox.checked) {
+                // Получаем базовую цену из текста
+                let basePriceText = basePriceCell ? basePriceCell.innerText : '0';
+                let basePrice = parseFloat(basePriceText.replace('₽', '').trim()) || 0;
+                
                 let finalPrice;
-                if (customPriceInput && customPriceInput.value) {
+                if (customPriceInput && customPriceInput.value && customPriceInput.value !== '') {
                     finalPrice = parseFloat(customPriceInput.value);
                 } else {
                     finalPrice = basePrice * multiplier;
                 }
-                calculatedCell.innerHTML = finalPrice.toFixed(2) + ' ₽';
+                if (!isNaN(finalPrice)) {
+                    calculatedCell.innerHTML = finalPrice.toFixed(2) + ' ₽';
+                } else {
+                    calculatedCell.innerHTML = '0.00 ₽';
+                }
             } else {
                 calculatedCell.innerHTML = '—';
             }

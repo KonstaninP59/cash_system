@@ -4,73 +4,158 @@
 {% block title %} - Моя эффективность{% endblock %}
 
 {% block content %}
-<h1 class="mb-4"><i class="bi bi-graph-up"></i> Моя эффективность</h1>
-
-<!-- Карточки с ключевыми показателями -->
-<div class="row mb-4">
-    <div class="col-md-3">
-        <div class="card text-white bg-primary">
-            <div class="card-body">
-                <h5 class="card-title">Месячный план</h5>
-                <p class="display-6">{{ plan.monthly_target|floatformat:0 }} ₽</p>
-            </div>
+<!-- Заголовок -->
+<div class="dashboard-header mb-4">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+        <div>
+            <h1 class="mb-1"><i class="bi bi-graph-up"></i> Моя эффективность</h1>
+            <p class="text-muted">Ваша личная аналитика продаж и выполнение плана</p>
         </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card text-white {% if completion_percentage >= 100 %}bg-success{% else %}bg-info{% endif %}">
-            <div class="card-body">
-                <h5 class="card-title">Продано за месяц на</h5>
-                <p class="display-6">{{ monthly_sales|floatformat:0 }} ₽</p>
-                <small class="text-white-50"> </small>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card text-white bg-warning">
-            <div class="card-body">
-                <h5 class="card-title">Осталось</h5>
-                <p class="display-6">{{ remaining_amount|floatformat:0 }} ₽</p>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card text-white bg-secondary">
-            <div class="card-body">
-                <h5 class="card-title">Средний чек</h5>
-                <p class="display-6">{{ average_check|floatformat:0 }} ₽</p>
-                <small class="text-white-50">Всего чеков: {{ sales_count }}</small>
+        <div class="dashboard-info">
+            <div class="alert alert-info mb-0">
+                <i class="bi bi-shop"></i> Ваш склад: <strong>{{ user_store.name }}</strong>
+                <br><small>{{ user_store.address }}</small>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Прогресс бар выполнения плана -->
+<!-- KPI Карточки -->
+<div class="row g-4 mb-4">
+    <div class="col-md-3">
+        <div class="kpi-card bg-gradient-primary text-white">
+            <div class="kpi-icon">
+                <i class="bi bi-calendar-check"></i>
+            </div>
+            <div class="kpi-value">{{ plan.monthly_target|floatformat:0 }} ₽</div>
+            <div class="kpi-label">Месячный план</div>
+            <div class="kpi-footer">цель на текущий месяц</div>
+            <div class="kpi-trend">{{ sales_count }} чеков</div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="kpi-card bg-gradient-success text-white">
+            <div class="kpi-icon">
+                <i class="bi bi-cash-stack"></i>
+            </div>
+            <div class="kpi-value">{{ monthly_sales|floatformat:0 }} ₽</div>
+            <div class="kpi-label">Продано за месяц</div>
+            <div class="kpi-footer">общая выручка</div>
+            <div class="kpi-trend trend-up">+{{ monthly_sales|floatformat:0 }} ₽</div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="kpi-card bg-gradient-warning text-white">
+            <div class="kpi-icon">
+                <i class="bi bi-arrow-repeat"></i>
+            </div>
+            <div class="kpi-value">{{ remaining_amount|floatformat:0 }} ₽</div>
+            <div class="kpi-label">Осталось выполнить</div>
+            <div class="kpi-footer">до выполнения плана</div>
+            <div class="kpi-trend">{{ completion_percentage }}% выполнено</div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="kpi-card bg-gradient-info text-white">
+            <div class="kpi-icon">
+                <i class="bi bi-receipt"></i>
+            </div>
+            <div class="kpi-value">{{ average_check|floatformat:0 }} ₽</div>
+            <div class="kpi-label">Средний чек</div>
+            <div class="kpi-footer">всего чеков: {{ sales_count }}</div>
+            <div class="kpi-trend">{{ daily_average|floatformat:0 }} ₽/день</div>
+        </div>
+    </div>
+</div>
+
+<!-- Прогресс выполнения плана -->
 <div class="card shadow mb-4">
     <div class="card-header bg-primary text-white">
-        <h5 class="mb-0">Прогресс выполнения плана</h5>
+        <h5 class="mb-0"><i class="bi bi-bar-chart-steps"></i> Прогресс выполнения плана</h5>
     </div>
     <div class="card-body">
-        <div class="progress mb-3" style="height: 30px;">
-            <div class="progress-bar 
-                {% if completion_percentage >= 100 %}bg-success
-                {% elif completion_percentage >= 75 %}bg-info
-                {% elif completion_percentage >= 50 %}bg-warning
-                {% else %}bg-danger{% endif %}" 
-                role="progressbar"
-                style="width: {% widthratio completion_percentage 1 1 %}%;" 
-                aria-valuenow="{{ completion_percentage }}" 
-                aria-valuemin="0" 
-                aria-valuemax="100">
-                {{ completion_percentage }}%
+        <div class="row align-items-center">
+            <div class="col-md-8">
+                <div class="progress mb-2" style="height: 30px;">
+                    <div class="progress-bar 
+                        {% if completion_percentage >= 100 %}bg-success
+                        {% elif completion_percentage >= 75 %}bg-info
+                        {% elif completion_percentage >= 50 %}bg-warning
+                        {% else %}bg-danger{% endif %}" 
+                        role="progressbar"
+                        style="width: {% widthratio completion_percentage 1 1 %}%;" 
+                        aria-valuenow="{{ completion_percentage }}" 
+                        aria-valuemin="0" 
+                        aria-valuemax="100">
+                        {{ completion_percentage }}%
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 text-end">
+                {% if completion_percentage >= 100 %}
+                    <span class="badge bg-success fs-6">План перевыполнен! 🎉</span>
+                {% elif completion_percentage >= 75 %}
+                    <span class="badge bg-info fs-6">Отличный результат! 👍</span>
+                {% elif completion_percentage >= 50 %}
+                    <span class="badge bg-warning fs-6">Хороший темп! 👌</span>
+                {% else %}
+                    <span class="badge bg-danger fs-6">Нужно больше продаж! ⚡</span>
+                {% endif %}
             </div>
         </div>
-        <p class="text-muted">
+        <p class="text-muted mt-3 mb-0">
             <i class="bi bi-info-circle"></i>
-            Выполнено {{ completion_percentage }}% от месячного плана
-            {% if completion_percentage > 100 %}
-                <span class="badge bg-success ms-2">План перевыполнен!</span>
-            {% endif %}
+            Выполнено {{ completion_percentage }}% от месячного плана. 
+            Средняя выручка в день: {{ daily_average|floatformat:0 }} ₽
         </p>
+    </div>
+</div>
+
+<!-- Основные метрики -->
+<div class="row g-4 mb-4">
+    <div class="col-md-6">
+        <div class="metric-card">
+            <div class="metric-title">
+                <i class="bi bi-calendar-day"></i> Продажи за сегодня
+            </div>
+            <div class="metric-value-large">{{ today_total|floatformat:0 }} ₽</div>
+            <div class="metric-subtitle">
+                {% if today_total > 0 %}
+                    <span class="text-success">✓ Есть продажи</span>
+                {% else %}
+                    <span class="text-muted">○ Нет продаж</span>
+                {% endif %}
+            </div>
+            <div class="metric-progress">
+                <div class="progress">
+                    <div class="progress-bar bg-success" style="width: {% widthratio today_total monthly_sales 100 %}%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="metric-card">
+            <div class="metric-title">
+                <i class="bi bi-calendar-week"></i> Продажи за 7 дней
+            </div>
+            <div class="metric-value-large">{{ week_total|floatformat:0 }} ₽</div>
+            <div class="metric-subtitle">
+                {% if week_total > 0 %}
+                    <span class="text-success">✓ Активны</span>
+                {% else %}
+                    <span class="text-muted">○ Нет активности</span>
+                {% endif %}
+            </div>
+            <div class="metric-progress">
+                <div class="progress">
+                    <div class="progress-bar bg-info" style="width: {% widthratio week_total monthly_sales 100 %}%"></div>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -78,10 +163,13 @@
 <div class="card shadow mb-4">
     <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
         <h5 class="mb-0"><i class="bi bi-bar-chart"></i> Мои продажи по дням</h5>
+        {% if has_sales %}
+            <span class="badge bg-light text-dark">Лучший день: {{ best_day }} число ({{ best_day_amount|floatformat:0 }} ₽)</span>
+        {% endif %}
     </div>
     <div class="card-body">
         {% if has_sales %}
-        <canvas id="salesChart" style="height: 300px;"></canvas>
+        <canvas id="salesChart" style="height: 350px;"></canvas>
         {% else %}
         <div class="text-center py-5">
             <i class="bi bi-bar-chart fs-1 d-block text-muted mb-3"></i>
@@ -95,54 +183,179 @@
     </div>
 </div>
 
-<!-- Дополнительная статистика -->
-<div class="row">
-    <div class="col-md-6">
-        <div class="card shadow mb-4">
-            <div class="card-header bg-success text-white">
-                <h5 class="mb-0"><i class="bi bi-calendar-day"></i> Сегодня</h5>
-            </div>
-            <div class="card-body text-center">
-                <p class="display-4">{{ today_total|floatformat:0 }} ₽</p>
-                {% if today_total > 0 %}
-                <span class="badge bg-success">Есть продажи</span>
-                {% else %}
-                <span class="badge bg-secondary">Нет продаж</span>
-                {% endif %}
-            </div>
-        </div>
+<!-- Топ-5 товаров -->
+<div class="card shadow mb-4">
+    <div class="card-header bg-success text-white">
+        <h5 class="mb-0"><i class="bi bi-trophy"></i> Мои лучшие товары месяца</h5>
     </div>
-    <div class="col-md-6">
-        <div class="card shadow mb-4">
-            <div class="card-header bg-info text-white">
-                <h5 class="mb-0"><i class="bi bi-calendar-week"></i> За 7 дней</h5>
+    <div class="card-body p-0">
+        {% if top_products %}
+        <div class="list-group list-group-flush">
+            {% for product in top_products %}
+            <div class="list-group-item d-flex justify-content-between align-items-center">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="rank-badge rank-{{ forloop.counter }}">{{ forloop.counter }}</div>
+                    <div>
+                        <div class="fw-bold">{{ product.name }}</div>
+                        <small class="text-muted">
+                            <i class="bi bi-{% if product.unit == 'kg' %}scale{% else %}box{% endif %}"></i>
+                            {% if product.unit == 'kg' %}
+                                {{ product.quantity|floatformat:3 }} кг
+                            {% else %}
+                                {{ product.quantity|floatformat:0 }} шт
+                            {% endif %}
+                        </small>
+                    </div>
+                </div>
+                <div class="text-end">
+                    <div class="fw-bold text-success">{{ product.total|floatformat:0 }} ₽</div>
+                    <small class="text-muted">
+                        {% widthratio product.total monthly_sales 100 %}% от выручки
+                    </small>
+                </div>
             </div>
-            <div class="card-body text-center">
-                <p class="display-4">{{ week_total|floatformat:0 }} ₽</p>
-                {% if week_total > 0 %}
-                <span class="badge bg-success">Активны</span>
-                {% else %}
-                <span class="badge bg-secondary">Нет активности</span>
-                {% endif %}
-            </div>
+            {% endfor %}
         </div>
+        {% else %}
+        <div class="text-center py-4">
+            <i class="bi bi-trophy fs-1 d-block text-muted mb-3"></i>
+            <p class="text-muted">Нет данных о продажах</p>
+        </div>
+        {% endif %}
     </div>
 </div>
+
+<style>
+/* KPI Cards */
+.kpi-card {
+    position: relative;
+    border-radius: 20px;
+    padding: 20px;
+    overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+    transition: transform 0.3s ease;
+}
+.kpi-card:hover {
+    transform: translateY(-5px);
+}
+.kpi-icon {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    font-size: 2rem;
+    opacity: 0.3;
+}
+.kpi-value {
+    font-size: 2.5rem;
+    font-weight: 800;
+    margin-bottom: 5px;
+}
+.kpi-label {
+    font-size: 0.9rem;
+    opacity: 0.9;
+    margin-bottom: 10px;
+}
+.kpi-footer {
+    font-size: 0.8rem;
+    opacity: 0.7;
+}
+.kpi-trend {
+    position: absolute;
+    bottom: 15px;
+    right: 20px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+.trend-up {
+    color: #2ecc71;
+}
+.trend-down {
+    color: #e74c3c;
+}
+
+/* Gradient backgrounds */
+.bg-gradient-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+.bg-gradient-success {
+    background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+}
+.bg-gradient-warning {
+    background: linear-gradient(135deg, #f2994a 0%, #f2c94c 100%);
+}
+.bg-gradient-info {
+    background: linear-gradient(135deg, #3b8d99 0%, #6b6b83 100%);
+}
+
+/* Metric Cards */
+.metric-card {
+    background: var(--panel);
+    border-radius: 20px;
+    padding: 25px;
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow-sm);
+}
+.metric-title {
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    margin-bottom: 10px;
+}
+.metric-value-large {
+    font-size: 3rem;
+    font-weight: 800;
+    color: var(--text);
+    margin-bottom: 5px;
+}
+.metric-subtitle {
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin-bottom: 15px;
+}
+.metric-progress .progress {
+    height: 6px;
+    border-radius: 3px;
+    background-color: var(--line);
+}
+
+/* Rank Badges */
+.rank-badge {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    font-weight: bold;
+    font-size: 1rem;
+}
+.rank-1 {
+    background: linear-gradient(135deg, #ffd700, #ff8c00);
+    color: white;
+}
+.rank-2 {
+    background: linear-gradient(135deg, #c0c0c0, #a0a0a0);
+    color: white;
+}
+.rank-3 {
+    background: linear-gradient(135deg, #cd7f32, #b87333);
+    color: white;
+}
+.rank-4, .rank-5 {
+    background: var(--primary-soft);
+    color: var(--text);
+}
+</style>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     {% if has_sales %}
-    // График продаж
     var ctx = document.getElementById('salesChart').getContext('2d');
-    
-    // Данные из Django
     var labels = {{ labels|safe }};
     var values = {{ daily_data|safe }};
     
-    // Находим максимальное значение для масштабирования
     var maxValue = Math.max(...values, 1);
-    
-    // Определяем шаг шкалы
     var stepSize;
     if (maxValue <= 1000) stepSize = 100;
     else if (maxValue <= 5000) stepSize = 500;
@@ -157,18 +370,37 @@ document.addEventListener('DOMContentLoaded', function() {
             datasets: [{
                 label: 'Мои продажи (₽)',
                 data: values,
-                backgroundColor: 'rgba(13, 110, 253, 0.1)',
-                borderColor: 'rgba(13, 110, 253, 1)',
+                backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                borderColor: 'rgba(102, 126, 234, 1)',
                 borderWidth: 2,
-                tension: 0.2,
+                tension: 0.3,
                 fill: true,
-                pointBackgroundColor: 'rgba(13, 110, 253, 1)',
-                pointRadius: 4
+                pointBackgroundColor: 'rgba(102, 126, 234, 1)',
+                pointBorderColor: '#fff',
+                pointRadius: 4,
+                pointHoverRadius: 6
             }]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return 'Продажи: ' + context.raw.toLocaleString('ru-RU') + ' ₽';
+                        }
+                    },
+                    backgroundColor: 'rgba(0,0,0,0.8)',
+                    titleFont: { size: 14, weight: 'bold' },
+                    bodyFont: { size: 13 },
+                    padding: 10,
+                    cornerRadius: 8
+                },
+                legend: {
+                    display: false
+                }
+            },
             scales: {
                 y: {
                     beginAtZero: true,
@@ -177,20 +409,20 @@ document.addEventListener('DOMContentLoaded', function() {
                         stepSize: stepSize,
                         callback: function(value) {
                             return value.toLocaleString('ru-RU') + ' ₽';
-                        }
-                    }
-                }
-            },
-            plugins: {
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            return 'Продажи: ' + context.raw.toLocaleString('ru-RU') + ' ₽';
-                        }
+                        },
+                        color: '#6b7280'
+                    },
+                    grid: {
+                        color: 'rgba(107, 114, 128, 0.1)'
                     }
                 },
-                legend: {
-                    display: false
+                x: {
+                    ticks: {
+                        color: '#6b7280'
+                    },
+                    grid: {
+                        display: false
+                    }
                 }
             }
         }

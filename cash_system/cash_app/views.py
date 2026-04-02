@@ -43,8 +43,11 @@ def is_cashier(user):
 
 def get_user_store(user):
     """Получить склад, к которому привязан пользователь"""
-    if hasattr(user, 'profile') and user.profile.store:
-        return user.profile.store
+    try:
+        if hasattr(user, 'profile') and user.profile:
+            return user.profile.store
+    except UserProfile.DoesNotExist:
+        pass
     return None
 
 
@@ -113,7 +116,10 @@ def logout_view(request):
 @login_required
 def index(request):
     """Главная страница"""
-    return redirect('product_list')
+    if is_admin(request.user):
+        return redirect('product_list')
+    else:
+        return redirect('sale')
 
 
 @login_required
@@ -205,29 +211,68 @@ def product_create(request):
         if form.is_valid():
             product = form.save()
             
-            # Добавляем товар на все активные склады с нулевым остатком
-            stores = StoreAddress.objects.filter(is_active=True)
-            for store in stores:
-                StoreProduct.objects.get_or_create(
-                    store=store,
-                    product=product,
-                    defaults={'quantity': 0}
-                )
+            # Получаем выбранный склад из POST
+            store_id = request.POST.get('store_id')
+            quantity_str = request.POST.get('quantity', '0').replace(',', '.')
+            
+            try:
+                quantity = Decimal(quantity_str)
+            except:
+                quantity = Decimal('0')
+            
+            # Добавляем товар на выбранный склад
+            if store_id:
+                try:
+                    store = StoreAddress.objects.get(pk=store_id, is_active=True)
+                    store_product, created = StoreProduct.objects.update_or_create(
+                        store=store,
+                        product=product,
+                        defaults={'quantity': quantity}
+                    )
+                    if created:
+                        messages.success(request, f'Товар "{product.name}" добавлен на склад "{store.name}" в количестве {quantity} {product.get_unit_display()}')
+                    else:
+                        messages.success(request, f'Количество товара "{product.name}" на складе "{store.name}" обновлено до {quantity} {product.get_unit_display()}')
+                except StoreAddress.DoesNotExist:
+                    messages.warning(request, 'Выбранный склад не найден. Товар создан без привязки к складу.')
+            else:
+                # Если склад не выбран, добавляем на первый активный склад
+                first_store = StoreAddress.objects.filter(is_active=True).first()
+                if first_store:
+                    StoreProduct.objects.create(
+                        store=first_store,
+                        product=product,
+                        quantity=quantity
+                    )
+                    messages.success(request, f'Товар "{product.name}" добавлен на склад "{first_store.name}" в количестве {quantity} {product.get_unit_display()}')
+                else:
+                    messages.warning(request, 'Нет активных складов. Товар создан без привязки к складу.')
             
             # Создаем запись в истории о добавлении товара
-            History.objects.create(
-                type='receipt',
-                product=product,
-                quantity=0,
-                user=request.user
-            )
+            if quantity > 0:
+                History.objects.create(
+                    type='receipt',
+                    product=product,
+                    quantity=quantity,
+                    user=request.user
+                )
             
-            messages.success(request, 'Товар успешно добавлен! QR-код сгенерирован')
+            # Генерация QR-кода
+            if not product.qr_code:
+                product.generate_qr_code()
+                product.save()
+            
+            messages.success(request, f'Товар "{product.name}" успешно добавлен!')
             return redirect('product_list')
     else:
         form = ProductForm()
-
-    return render(request, 'cash_app/product_form.html', {'form': form, 'title': 'Добавление товара'})
+    
+    context = {
+        'form': form,
+        'title': 'Добавление товара',
+        'stores': StoreAddress.objects.filter(is_active=True),
+    }
+    return render(request, 'cash_app/product_form.html', context)
 
 
 @login_required
@@ -236,32 +281,96 @@ def product_update(request, pk):
     """Редактирование товара (только для администратора)"""
     product = get_object_or_404(Product, pk=pk)
     
+    # Получаем текущую привязку к складу
+    current_store_product = StoreProduct.objects.filter(product=product).first()
+    current_store_id = current_store_product.store.id if current_store_product else None
+    current_quantity = current_store_product.quantity if current_store_product else 0
+    
     if request.method == 'POST':
         form = ProductForm(request.POST, instance=product)
         if form.is_valid():
-            form.save()
-            messages.success(request, 'Товар успешно обновлен!')
+            product = form.save()
+            
+            # Получаем выбранный склад и количество из POST
+            store_id = request.POST.get('store_id')
+            quantity_str = request.POST.get('quantity', '0').replace(',', '.')
+            
+            try:
+                quantity = Decimal(quantity_str)
+            except:
+                quantity = Decimal('0')
+            
+            # Обновляем привязку к складу
+            if store_id:
+                try:
+                    store = StoreAddress.objects.get(pk=store_id, is_active=True)
+                    store_product, created = StoreProduct.objects.update_or_create(
+                        store=store,
+                        product=product,
+                        defaults={'quantity': quantity}
+                    )
+                    
+                    # Если количество изменилось, создаем запись в истории
+                    if quantity != current_quantity:
+                        if quantity > current_quantity:
+                            History.objects.create(
+                                type='receipt',
+                                product=product,
+                                quantity=quantity - current_quantity,
+                                user=request.user
+                            )
+                        else:
+                            History.objects.create(
+                                type='disposal',
+                                product=product,
+                                quantity=current_quantity - quantity,
+                                user=request.user,
+                                reason='Корректировка остатков'
+                            )
+                    
+                    messages.success(request, f'Товар "{product.name}" обновлен на складе "{store.name}"')
+                except StoreAddress.DoesNotExist:
+                    messages.warning(request, 'Выбранный склад не найден')
+            else:
+                messages.warning(request, 'Склад не выбран')
+            
+            messages.success(request, f'Товар "{product.name}" успешно обновлен!')
             return redirect('product_list')
     else:
         form = ProductForm(instance=product)
     
-    return render(request, 'cash_app/product_form.html', {
-        'form': form, 
+    context = {
+        'form': form,
         'title': 'Редактирование товара',
-        'product': product
-    })
+        'product': product,
+        'stores': StoreAddress.objects.filter(is_active=True),
+        'current_store_id': current_store_id,
+        'current_quantity': current_quantity,
+    }
+    return render(request, 'cash_app/product_form.html', context)
 
 
 @login_required
 @user_passes_test(is_admin)
 def product_delete(request, pk):
-    """Удаление товара (только для администратора)"""
+    """Удаление товара со всех складов (только для администратора)"""
     product = get_object_or_404(Product, pk=pk)
 
     if request.method == 'POST':
         try:
+            # Удаляем товар из прайс-листов
+            PriceListItem.objects.filter(product=product).delete()
+            
+            # Удаляем все записи о товаре на складах
+            StoreProduct.objects.filter(product=product).delete()
+            
+            # Удаляем записи в истории (если нужно - используйте PROTECT или CASCADE)
+            History.objects.filter(product=product).delete()
+            
+            # Удаляем сам товар
             product.delete()
-            messages.success(request, 'Товар успешно удален!')
+            
+            messages.success(request, f'Товар "{product.name}" успешно удален со всех складов и из прайс-листов!')
         except ProtectedError:
             messages.error(
                 request,
@@ -288,6 +397,19 @@ def product_disposal(request, pk):
         if form.is_valid():
             quantity = form.cleaned_data['quantity']
             reason = form.cleaned_data['reason']
+            
+            # Получаем выбранный склад
+            store_id = request.POST.get('store_id')
+            store = None
+            if store_id:
+                try:
+                    store = StoreAddress.objects.get(pk=store_id)
+                except StoreAddress.DoesNotExist:
+                    messages.error(request, 'Выбранный склад не найден')
+                    return redirect('product_disposal', pk=product.pk)
+            else:
+                messages.error(request, 'Выберите склад для списания')
+                return redirect('product_disposal', pk=product.pk)
 
             try:
                 validate_quantity_for_product(product, quantity)
@@ -295,59 +417,107 @@ def product_disposal(request, pk):
                 messages.error(request, str(e))
                 return redirect('product_disposal', pk=product.pk)
 
-            if quantity > product.quantity:
-                messages.error(request, f'Нельзя списать больше, чем есть на складе! Доступно: {product.quantity}')
+            # Проверяем наличие на выбранном складе
+            store_product = StoreProduct.objects.filter(store=store, product=product).first()
+            if not store_product or store_product.quantity < quantity:
+                available = store_product.quantity if store_product else 0
+                messages.error(request, f'Недостаточно товара на складе "{store.name}"! Доступно: {available} {product.get_unit_display()}')
                 return redirect('product_disposal', pk=product.pk)
+            
+            # Списываем товар
+            store_product.quantity -= quantity
+            store_product.save()
 
-            product.quantity -= quantity
-            product.save()
-
+            # Создаем запись в истории
             History.objects.create(
                 type='disposal',
                 product=product,
+                store=store,
                 quantity=quantity,
                 user=request.user,
                 reason=reason
             )
 
-            messages.success(request, f'Списано {quantity} {product.get_unit_display()} товара "{product.name}"')
+            messages.success(request, f'Списано {quantity} {product.get_unit_display()} товара "{product.name}" со склада "{store.name}"')
             return redirect('product_list')
     else:
-        form = DisposalForm(initial={'quantity': product.quantity})
+        form = DisposalForm(initial={'quantity': 0})
 
+    # Получаем остатки на складах для отображения
+    store_products = StoreProduct.objects.filter(product=product).select_related('store')
+    
     context = {
         'product': product,
         'form': form,
+        'stores': StoreAddress.objects.filter(is_active=True),
+        'store_products': store_products,
     }
     return render(request, 'cash_app/product_disposal.html', context)
 
 
 @login_required
 def history_list(request):
-    """История движений товаров с группировкой по датам"""
+    """История движений товаров с группировкой по датам и продажам"""
     type_filter = request.GET.get('type')
     product_filter = request.GET.get('product')
+    store_filter = request.GET.get('store')
+    date_group = request.GET.get('date_group', 'by_date')
     
-    base_qs = History.objects.all().select_related('product', 'user', 'coupon')
+    base_qs = History.objects.all().select_related('product', 'user', 'coupon', 'store')
     
-    # Кассиры видят только продажи (без поступлений и списаний)
+    # Кассиры видят только свои продажи
     if is_cashier(request.user):
-        base_qs = base_qs.filter(type='sale')
+        base_qs = base_qs.filter(type='sale', user=request.user)
+    else:
+        # Фильтр по типу для администратора
+        if type_filter:
+            if type_filter in ['receipt', 'disposal']:
+                base_qs = base_qs.filter(type=type_filter)
+            elif type_filter == 'sale':
+                base_qs = base_qs.filter(type='sale')
     
-    # Применяем фильтры
-    if type_filter:
-        if type_filter in ['receipt', 'disposal'] and not is_cashier(request.user):
-            base_qs = base_qs.filter(type=type_filter)
-        elif type_filter == 'sale':
-            base_qs = base_qs.filter(type='sale')
-    
+    # Фильтр по товару (для всех)
     if product_filter:
         base_qs = base_qs.filter(product_id=product_filter)
     
+    # Фильтр по складу (только для администратора)
+    if store_filter and not is_cashier(request.user):
+        base_qs = base_qs.filter(store_id=store_filter)
+    
+    # Группируем продажи по sale_group
+    sales = base_qs.filter(type='sale').order_by('-date')
+    other = base_qs.exclude(type='sale').order_by('-date')
+    
+    # Группируем продажи в один чек
+    grouped_sales = {}
+    for sale in sales:
+        if sale.sale_group not in grouped_sales:
+            grouped_sales[sale.sale_group] = {
+                'type': 'sale_group',
+                'sale_group': sale.sale_group,
+                'date': sale.date,
+                'user': sale.user,
+                'coupon': sale.coupon,
+                'store': sale.store,
+                'items': [],
+                'total': 0,
+                'quantity_total': 0,
+            }
+        grouped_sales[sale.sale_group]['items'].append(sale)
+        grouped_sales[sale.sale_group]['total'] += float(sale.total_price or 0)
+        grouped_sales[sale.sale_group]['quantity_total'] += float(sale.quantity)
+    
+    grouped_sales_list = list(grouped_sales.values())
+    grouped_sales_list.sort(key=lambda x: x['date'], reverse=True)
+    
+    # Объединяем все записи
+    all_entries = list(other) + grouped_sales_list
+    all_entries.sort(key=lambda x: x.date if hasattr(x, 'date') else x['date'], reverse=True)
+    
     # Группировка по датам
     entries_by_date = {}
-    for entry in base_qs.order_by('-date'):
-        date_key = entry.date.strftime('%d.%m.%Y')
+    for entry in all_entries:
+        date_key = entry.date.strftime('%d.%m.%Y') if hasattr(entry, 'date') else entry['date'].strftime('%d.%m.%Y')
         if date_key not in entries_by_date:
             entries_by_date[date_key] = []
         entries_by_date[date_key].append(entry)
@@ -356,22 +526,32 @@ def history_list(request):
         'entries_by_date': entries_by_date,
         'type_choices': History.TYPE_CHOICES,
         'products': Product.objects.all(),
+        'stores': StoreAddress.objects.filter(is_active=True),
         'current_type': type_filter,
         'current_product': product_filter,
+        'current_store': store_filter,
         'is_cashier': is_cashier(request.user),
+        'date_group': date_group,
     }
     return render(request, 'cash_app/history_list.html', context)
 
 
 @login_required
 def sale_view(request):
+    """Продажа товаров (только для кассиров)"""
+    # Администраторы не имеют доступа к продажам
+    if is_admin(request.user):
+        messages.error(request, 'Администраторы не имеют доступа к разделу продаж')
+        return redirect('dashboard')
+
     """Продажа товаров"""
     # Получаем склад пользователя
-    user_store = get_user_store(request.user)
-    
-    if not user_store and not is_admin(request.user):
-        messages.error(request, 'Ваш аккаунт не привязан к складу. Обратитесь к администратору.')
-        return redirect('dashboard')
+    user_store = None
+    if not is_admin(request.user):
+        user_store = get_user_store(request.user)
+        if not user_store:
+            messages.error(request, 'Ваш аккаунт не привязан к складу. Обратитесь к администратору.')
+            return redirect('dashboard')
     
     if request.method == 'POST':
         cart = request.session.get('cart', {})
@@ -409,9 +589,12 @@ def sale_view(request):
                 if product.unit == 'kg' and quantity < Decimal('0.001'):
                     raise ValueError(f'Минимальное количество для "{product.name}" - 0,001 кг')
                 
-                # Проверка наличия на складе пользователя
-                store_product = StoreProduct.objects.filter(store=user_store, product=product).first()
-                available_quantity = store_product.quantity if store_product else 0
+                # Проверка наличия на складе
+                if is_cashier(request.user) and user_store:
+                    store_product = StoreProduct.objects.filter(store=user_store, product=product).first()
+                    available_quantity = store_product.quantity if store_product else 0
+                else:
+                    available_quantity = StoreProduct.objects.filter(product=product).aggregate(total=Sum('quantity'))['total'] or 0
                 
                 if float(available_quantity) < float(quantity):
                     raise ValueError(f'Недостаточно "{product.name}" на складе')
@@ -475,28 +658,49 @@ def sale_view(request):
     # Получаем выбранный прайс-лист из сессии
     selected_price_list_id = request.session.get('selected_price_list')
     selected_price_list = None
-    selected_prices = {}
     available_products = []
+    
+    # Отладочный вывод в консоль
+    print(f"DEBUG: selected_price_list_id = {selected_price_list_id}")
+    print(f"DEBUG: user_store = {user_store}")
     
     if selected_price_list_id:
         try:
             selected_price_list = PriceList.objects.get(pk=selected_price_list_id, is_active=True)
+            print(f"DEBUG: выбран прайс-лист: {selected_price_list.name}")
+            
             # Получаем все товары из выбранного прайс-листа
             price_list_items = selected_price_list.items.select_related('product', 'product__category').all()
+            print(f"DEBUG: товаров в прайс-листе: {price_list_items.count()}")
             
             for item in price_list_items:
                 product = item.product
-                # Получаем остаток на складе пользователя
-                store_product = StoreProduct.objects.filter(store=user_store, product=product).first()
-                quantity = store_product.quantity if store_product else 0
+                print(f"DEBUG: проверка товара: {product.name}")
+                
+                # Получаем количество в зависимости от роли пользователя
+                if is_cashier(request.user) and user_store:
+                    store_product = StoreProduct.objects.filter(store=user_store, product=product).first()
+                    quantity = store_product.quantity if store_product else 0
+                    print(f"DEBUG: на складе {user_store.name}: {quantity} {product.get_unit_display()}")
+                else:
+                    total_quantity = StoreProduct.objects.filter(product=product).aggregate(total=Sum('quantity'))['total'] or 0
+                    quantity = total_quantity
+                    print(f"DEBUG: всего на всех складах: {quantity}")
                 
                 if quantity > 0 and product.expiration_date >= date.today():
                     product.display_price = item.get_price()
                     product.current_quantity = quantity
                     available_products.append(product)
+                    print(f"DEBUG: товар {product.name} добавлен в доступные")
+                else:
+                    print(f"DEBUG: товар {product.name} НЕ добавлен (quantity={quantity}, expired={product.expiration_date < date.today()})")
                     
         except PriceList.DoesNotExist:
+            print(f"DEBUG: прайс-лист {selected_price_list_id} не найден")
             selected_price_list = None
+    else:
+        print("DEBUG: прайс-лист не выбран")
+
     
     # Группируем товары по категориям
     categories_with_products = {}
@@ -560,6 +764,9 @@ def sale_view(request):
             del request.session['applied_coupon']
             request.session.modified = True
     
+    # Получаем склады для отображения в информации (только для админа)
+    stores = StoreAddress.objects.filter(is_active=True) if is_admin(request.user) else []
+    
     context = {
         'categories': categories_with_products,
         'collapsed_categories': [str(cat_id) for cat_id in collapsed_categories],
@@ -571,6 +778,9 @@ def sale_view(request):
         'applied_coupon': applied_coupon,
         'active_price_lists': active_price_lists,
         'selected_price_list': selected_price_list,
+        'user_store': user_store,
+        'stores': stores,
+        'is_cashier': is_cashier(request.user),
     }
     return render(request, 'cash_app/sale.html', context)
 
@@ -903,7 +1113,7 @@ def receipt_pdf(request):
 
 @login_required
 def dashboard_view(request):
-    """Дашборд эффективности с учетом складов"""
+    """Дашборд эффективности с улучшенным отображением"""
     now = timezone.now()
     start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     start_of_year = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -927,16 +1137,12 @@ def dashboard_view(request):
         )
         monthly_sales = sum(float(s.total_price or 0) for s in user_sales)
         
-        # Количество продаж (уникальных групп продаж)
         unique_sales = user_sales.values('sale_group').distinct().count()
-        
-        # Средний чек - сумма всех продаж / количество чеков
         if unique_sales > 0:
             average_check = monthly_sales / unique_sales
         else:
             average_check = 0
         
-        # Продажи за сегодня
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         today_sales = History.objects.filter(
             type='sale',
@@ -945,7 +1151,6 @@ def dashboard_view(request):
         )
         today_total = sum(float(s.total_price or 0) for s in today_sales)
         
-        # Продажи за неделю
         week_start = now - timedelta(days=7)
         week_sales = History.objects.filter(
             type='sale',
@@ -953,6 +1158,19 @@ def dashboard_view(request):
             date__gte=week_start
         )
         week_total = sum(float(s.total_price or 0) for s in week_sales)
+        
+        # Лучший день в месяце
+        best_day = 0
+        best_day_amount = 0
+        if user_sales.exists():
+            day_sales = {}
+            for sale in user_sales:
+                day = sale.date.day
+                day_sales[day] = day_sales.get(day, 0) + float(sale.total_price or 0)
+            for day, amount in day_sales.items():
+                if amount > best_day_amount:
+                    best_day_amount = amount
+                    best_day = day
         
         # Статистика по дням для графика
         days_in_month = calendar.monthrange(now.year, now.month)[1]
@@ -974,6 +1192,28 @@ def dashboard_view(request):
             daily_data.append(round(day_total, 2))
             labels.append(day)
         
+        # Топ-5 товаров пользователя за месяц
+        top_products = History.objects.filter(
+            type='sale',
+            user=request.user,
+            date__gte=start_of_month
+        ).values(
+            'product__name',
+            'product__unit'
+        ).annotate(
+            total=Sum('total_price'),
+            quantity=Sum('quantity')
+        ).order_by('-total')[:5]
+        
+        top_products_list = []
+        for p in top_products:
+            top_products_list.append({
+                'name': p['product__name'] or 'Товар',
+                'unit': p['product__unit'],
+                'total': float(p['total']),
+                'quantity': float(p['quantity'])
+            })
+        
         context = {
             'plan': plan,
             'monthly_sales': round(monthly_sales, 2),
@@ -989,31 +1229,50 @@ def dashboard_view(request):
             'has_sales': any(d > 0 for d in daily_data),
             'is_admin': False,
             'user_store': user_store,
+            'best_day': best_day,
+            'best_day_amount': round(best_day_amount, 2),
+            'top_products': top_products_list,
         }
-        
         return render(request, 'cash_app/dashboard_user.html', context)
     
     # Для администратора - общая статистика
     else:
+        # Получаем выбранный склад из GET параметра
+        selected_store_id = request.GET.get('store')
+        selected_store = None
+        if selected_store_id:
+            try:
+                selected_store = StoreAddress.objects.get(pk=selected_store_id, is_active=True)
+            except StoreAddress.DoesNotExist:
+                selected_store = None
+        
+        # Базовые фильтры
+        store_filter = {}
+        if selected_store:
+            store_filter = {'store': selected_store}
+        
         # Общая выручка за месяц
         total_monthly_sales = History.objects.filter(
             type='sale',
-            date__gte=start_of_month
+            date__gte=start_of_month,
+            **store_filter
         ).aggregate(total=Sum('total_price'))['total'] or 0
         
         # Общая выручка за год
         total_yearly_sales = History.objects.filter(
             type='sale',
-            date__gte=start_of_year
+            date__gte=start_of_year,
+            **store_filter
         ).aggregate(total=Sum('total_price'))['total'] or 0
         
         # Количество уникальных продаж (чеков) за месяц
         sales_count = History.objects.filter(
             type='sale',
-            date__gte=start_of_month
+            date__gte=start_of_month,
+            **store_filter
         ).values('sale_group').distinct().count()
         
-        # Средний чек - сумма всех продаж / количество чеков
+        # Средний чек
         if sales_count > 0:
             average_check = float(total_monthly_sales) / sales_count
         else:
@@ -1022,7 +1281,6 @@ def dashboard_view(request):
         # Статистика по планам
         users_with_plans = SalesPlan.objects.all().select_related('user', 'updated_by')
         
-        # Подсчет статистики выполнения
         total_plans = users_with_plans.count()
         half_completed = 0
         over_completed = 0
@@ -1047,17 +1305,19 @@ def dashboard_view(request):
             
             day_sales = History.objects.filter(
                 type='sale',
-                date__range=[day_start, day_end]
+                date__range=[day_start, day_end],
+                **store_filter
             )
             day_total = sum(float(s.total_price or 0) for s in day_sales)
             
             daily_data.append(round(day_total, 2))
             labels.append(day)
         
-        # Топ-5 товаров за месяц с единицами измерения
+        # Топ-5 товаров за месяц
         top_products = History.objects.filter(
             type='sale',
-            date__gte=start_of_month
+            date__gte=start_of_month,
+            **store_filter
         ).values(
             'product__name',
             'product__unit'
@@ -1066,7 +1326,6 @@ def dashboard_view(request):
             quantity=Sum('quantity')
         ).order_by('-total')[:5]
         
-        # Преобразуем в список для удобства использования в шаблоне
         top_products_list = []
         for p in top_products:
             top_products_list.append({
@@ -1080,17 +1339,69 @@ def dashboard_view(request):
         stores = StoreAddress.objects.filter(is_active=True)
         store_stats = []
         for store in stores:
+            # Продажи со склада
             store_sales = History.objects.filter(
                 type='sale',
+                store=store,
                 date__gte=start_of_month
-            )
-            # Фильтр по складу будет работать после добавления поля store в History
+            ).aggregate(total=Sum('total_price'))['total'] or 0
+            
+            store_sales_count = History.objects.filter(
+                type='sale',
+                store=store,
+                date__gte=start_of_month
+            ).values('sale_group').distinct().count()
+            
+            # Поступления на склад
+            store_receipts = History.objects.filter(
+                type='receipt',
+                store=store,
+                date__gte=start_of_month
+            ).aggregate(total=Sum('quantity'))['total'] or 0
+            
+            # Списания со склада
+            store_disposals = History.objects.filter(
+                type='disposal',
+                store=store,
+                date__gte=start_of_month
+            ).aggregate(total=Sum('quantity'))['total'] or 0
+            
             store_stats.append({
                 'store': store,
-                'sales': 0,  # Временно
-                'sales_count': 0,
-                'users_count': UserProfile.objects.filter(store=store).count()
+                'sales': float(store_sales),
+                'sales_count': store_sales_count,
+                'average_check': float(store_sales) / store_sales_count if store_sales_count > 0 else 0,
+                'users_count': UserProfile.objects.filter(store=store).count(),
+                'receipts': float(store_receipts),
+                'disposals': float(store_disposals),
             })
+        
+        # Топ продавцов за месяц
+        top_sellers = []
+        for user in User.objects.filter(is_staff=False, is_active=True):
+            user_sales = History.objects.filter(
+                type='sale',
+                user=user,
+                date__gte=start_of_month
+            ).aggregate(total=Sum('total_price'))['total'] or 0
+            
+            try:
+                plan = SalesPlan.objects.get(user=user)
+                plan_amount = plan.monthly_target
+                completion = plan.get_completion_percentage()
+            except SalesPlan.DoesNotExist:
+                plan_amount = 0
+                completion = 0
+            
+            if user_sales > 0:
+                top_sellers.append({
+                    'user': user,
+                    'sales': float(user_sales),
+                    'plan': float(plan_amount),
+                    'completion': completion
+                })
+        
+        top_sellers = sorted(top_sellers, key=lambda x: x['sales'], reverse=True)[:5]
         
         context = {
             'total_monthly_sales': round(float(total_monthly_sales), 2),
@@ -1108,6 +1419,8 @@ def dashboard_view(request):
             'is_admin': True,
             'stores': stores,
             'store_stats': store_stats,
+            'selected_store': selected_store,
+            'top_sellers': top_sellers,
         }
         
         return render(request, 'cash_app/dashboard_admin.html', context)
@@ -1646,9 +1959,11 @@ def process_payment(request):
                 store_product.quantity -= quantity
                 store_product.save()
 
+                # Сохраняем склад в историю
                 History.objects.create(
                     type='sale',
                     product=product,
+                    store=user_store,  # <-- Добавляем склад
                     quantity=quantity,
                     total_price=Decimal(str(item['total'])),
                     user=request.user,
@@ -1842,6 +2157,8 @@ def price_list_list(request):
 @user_passes_test(is_admin)
 def price_list_create(request):
     """Создание прайс-листа"""
+    products = Product.objects.all().order_by('name')
+    
     if request.method == 'POST':
         name = request.POST.get('name')
         description = request.POST.get('description', '')
@@ -1859,12 +2176,38 @@ def price_list_create(request):
                 multiplier=multiplier,
                 is_active=True
             )
+            
+            # Добавляем выбранные товары
+            product_ids = request.POST.getlist('product_ids')
+            custom_prices = request.POST.getlist('custom_prices')
+            
+            for i, product_id in enumerate(product_ids):
+                custom_price_str = custom_prices[i].replace(',', '.') if i < len(custom_prices) and custom_prices[i] else ''
+                custom_price = None
+                if custom_price_str:
+                    try:
+                        custom_price = Decimal(custom_price_str)
+                    except:
+                        custom_price = None
+                
+                PriceListItem.objects.create(
+                    price_list=price_list,
+                    product_id=product_id,
+                    custom_price=custom_price
+                )
+            
             messages.success(request, f'Прайс-лист "{name}" успешно создан')
-            return redirect('price_list_edit', pk=price_list.pk)
+            return redirect('price_list_list')
         else:
             messages.error(request, 'Название прайс-листа обязательно')
     
-    return render(request, 'cash_app/price_list_form.html', {'title': 'Создание прайс-листа'})
+    context = {
+        'title': 'Создание прайс-листа',
+        'products': products,
+        'existing_items_keys': [],
+        'price_list': None,
+    }
+    return render(request, 'cash_app/price_list_form.html', context)
 
 
 @login_required
@@ -1875,6 +2218,7 @@ def price_list_edit(request, pk):
     products = Product.objects.all().order_by('name')
     
     existing_items = {item.product_id: item for item in price_list.items.all()}
+    existing_items_keys = list(existing_items.keys())
     
     if request.method == 'POST':
         price_list.name = request.POST.get('name')
@@ -1916,7 +2260,7 @@ def price_list_edit(request, pk):
         'title': 'Редактирование прайс-листа',
         'price_list': price_list,
         'products': products,
-        'existing_items': existing_items,
+        'existing_items_keys': existing_items_keys,
     }
     return render(request, 'cash_app/price_list_form.html', context)
 
@@ -2001,7 +2345,6 @@ def create_user(request):
 
 
 @login_required
-@user_passes_test(is_admin)
 def select_price_list(request):
     """Выбор прайс-листа для продажи"""
     if request.method == 'POST':
@@ -2010,6 +2353,7 @@ def select_price_list(request):
             try:
                 price_list = PriceList.objects.get(pk=price_list_id, is_active=True)
                 request.session['selected_price_list'] = price_list_id
+                request.session.modified = True
                 messages.success(request, f'Выбран прайс-лист: {price_list.name}')
             except PriceList.DoesNotExist:
                 messages.error(request, 'Прайс-лист не найден')
@@ -2017,7 +2361,7 @@ def select_price_list(request):
             if 'selected_price_list' in request.session:
                 del request.session['selected_price_list']
                 request.session.modified = True
-            messages.success(request, 'Выбран обычный прайс-лист')
+            messages.success(request, 'Прайс-лист сброшен')
     
     return redirect('sale')
 
@@ -2037,3 +2381,58 @@ def select_store(request):
             messages.success(request, 'Показаны все склады')
         request.session.modified = True
     return redirect('product_list')
+
+
+@login_required
+@user_passes_test(is_admin)
+def add_store_quantity(request, product_id):
+    """Добавление количества товара на склад"""
+    product = get_object_or_404(Product, pk=product_id)
+    stores = StoreAddress.objects.filter(is_active=True)
+    
+    if request.method == 'POST':
+        store_id = request.POST.get('store_id')
+        quantity = Decimal(request.POST.get('quantity', 0))
+        
+        if store_id and quantity > 0:
+            store = get_object_or_404(StoreAddress, pk=store_id)
+            store_product, created = StoreProduct.objects.get_or_create(
+                store=store,
+                product=product,
+                defaults={'quantity': 0}
+            )
+            store_product.quantity += quantity
+            store_product.save()
+            
+            # Сохраняем склад в историю поступления
+            History.objects.create(
+                type='receipt',
+                product=product,
+                store=store,  # <-- Добавляем склад
+                quantity=quantity,
+                user=request.user
+            )
+            
+            messages.success(request, f'Добавлено {quantity} {product.get_unit_display()} товара "{product.name}" на склад "{store.name}"')
+        else:
+            messages.error(request, 'Выберите склад и укажите количество')
+        
+        return redirect('product_list')
+    
+    context = {
+        'product': product,
+        'stores': stores,
+    }
+    return render(request, 'cash_app/add_store_quantity.html', context)
+
+
+@login_required
+@user_passes_test(is_admin)
+def api_store_product(request, store_id, product_id):
+    """API для получения количества товара на складе"""
+    try:
+        store_product = StoreProduct.objects.get(store_id=store_id, product_id=product_id)
+        return JsonResponse({'quantity': float(store_product.quantity)})
+    except StoreProduct.DoesNotExist:
+        return JsonResponse({'quantity': 0})
+    

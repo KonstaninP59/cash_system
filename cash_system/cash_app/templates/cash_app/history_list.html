@@ -10,22 +10,19 @@
 <div class="card shadow mb-4">
     <div class="card-body">
         <form method="get" class="row g-3">
-            <div class="col-md-4">
+            {% if not is_cashier %}
+            <div class="col-md-3">
                 <label class="form-label">Тип операции</label>
                 <select name="type" class="form-select">
                     <option value="">Все типы</option>
                     {% for key, value in type_choices %}
-                        {% if is_cashier and key != 'sale' %}
-                            <!-- Кассиры не видят другие типы -->
-                        {% else %}
-                            <option value="{{ key }}" {% if current_type == key %}selected{% endif %}>
-                                {{ value }}
-                            </option>
-                        {% endif %}
+                        <option value="{{ key }}" {% if current_type == key %}selected{% endif %}>
+                            {{ value }}
+                        </option>
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <label class="form-label">Товар</label>
                 <select name="product" class="form-select">
                     <option value="">Все товары</option>
@@ -36,11 +33,41 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-md-4 d-flex align-items-end">
+            <div class="col-md-3">
+                <label class="form-label">Склад</label>
+                <select name="store" class="form-select">
+                    <option value="">Все склады</option>
+                    {% for store in stores %}
+                        <option value="{{ store.id }}" {% if current_store == store.id|stringformat:"i" %}selected{% endif %}>
+                            {{ store.name }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
                 <button type="submit" class="btn btn-primary w-100">
                     <i class="bi bi-funnel"></i> Применить фильтры
                 </button>
             </div>
+            {% else %}
+            <!-- Для кассиров - упрощенные фильтры -->
+            <div class="col-md-6">
+                <label class="form-label">Товар</label>
+                <select name="product" class="form-select">
+                    <option value="">Все товары</option>
+                    {% for product in products %}
+                        <option value="{{ product.id }}" {% if current_product == product.id|stringformat:"i" %}selected{% endif %}>
+                            {{ product.name }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-6 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="bi bi-funnel"></i> Применить фильтры
+                </button>
+            </div>
+            {% endif %}
         </form>
     </div>
 </div>
@@ -68,6 +95,7 @@
                                 <tr>
                                     <th>Время</th>
                                     <th>Тип операции</th>
+                                    <th>Склад</th>
                                     <th>Товар(ы)</th>
                                     <th>Количество</th>
                                     <th>Сумма</th>
@@ -93,6 +121,15 @@
                                         {% endif %}
                                     </td>
                                     <td>
+                                        {% if entry.store %}
+                                            <span class="badge bg-secondary">{{ entry.store.name }}</span>
+                                        {% elif entry.store %}
+                                            <span class="badge bg-secondary">{{ entry.store.name }}</span>
+                                        {% else %}
+                                            —
+                                        {% endif %}
+                                    </td>
+                                    <td>
                                         {% if entry.type == 'sale_group' %}
                                             <strong>{{ entry.items|length }} товара(ов)</strong>
                                             <i class="bi bi-chevron-down ms-2 toggle-icon-small"></i>
@@ -102,9 +139,13 @@
                                     </td>
                                     <td>
                                         {% if entry.type == 'sale_group' %}
-                                            {{ entry.items|length }} наименований
+                                            {{ entry.quantity_total|floatformat:0 }} ед.
                                         {% else %}
-                                            {{ entry.quantity }} {{ entry.product.get_unit_display }}
+                                            {% if entry.product.unit == 'kg' %}
+                                                {{ entry.quantity|floatformat:3 }} {{ entry.product.get_unit_display }}
+                                            {% else %}
+                                                {{ entry.quantity|floatformat:0 }} {{ entry.product.get_unit_display }}
+                                            {% endif %}
                                         {% endif %}
                                     </td>
                                     <td>
@@ -128,12 +169,15 @@
                                     <td>{{ entry.user.username|default:"—" }}</td>
                                 </tr>
                                 
-                                <!-- Детали продажи (скрыты по умолчанию) -->
+                                <!-- Детали продажи (раскрывающийся блок) -->
                                 {% if entry.type == 'sale_group' %}
                                 <tr class="sale-details" id="details-{{ entry.sale_group }}" style="display: none;">
-                                    <td colspan="7" class="bg-light">
+                                    <td colspan="8" class="bg-light">
                                         <div class="p-3">
-                                            <h6><i class="bi bi-receipt"></i> Детали продажи:</h6>
+                                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                                <h6><i class="bi bi-receipt"></i> Детали продажи (Чек №{{ entry.sale_group|slice:"-8" }})</h6>
+                                                <span class="badge bg-info">{{ entry.items|length }} товаров</span>
+                                            </div>
                                             <table class="table table-sm mb-0">
                                                 <thead>
                                                     <tr>
@@ -147,7 +191,13 @@
                                                     {% for item in entry.items %}
                                                     <tr>
                                                         <td>{{ item.product.name }}</td>
-                                                        <td>{{ item.quantity }} {{ item.product.get_unit_display }}</td>
+                                                        <td>
+                                                            {% if item.product.unit == 'kg' %}
+                                                                {{ item.quantity|floatformat:3 }} {{ item.product.get_unit_display }}
+                                                            {% else %}
+                                                                {{ item.quantity|floatformat:0 }} {{ item.product.get_unit_display }}
+                                                            {% endif %}
+                                                        </td>
                                                         <td>{{ item.product.price|floatformat:2 }} ₽</td>
                                                         <td>{{ item.total_price|floatformat:2 }} ₽</td>
                                                     </tr>
@@ -166,6 +216,10 @@
                                                     </tr>
                                                 </tfoot>
                                             </table>
+                                            <div class="mt-2 text-muted small">
+                                                <i class="bi bi-shop"></i> Склад: {{ entry.store.name|default:"Не указан" }}
+                                                <i class="bi bi-person ms-3"></i> Кассир: {{ entry.user.username|default:"—" }}
+                                            </div>
                                         </div>
                                     </td>
                                 </tr>
@@ -198,6 +252,7 @@
 }
 .sale-group {
     transition: background-color 0.2s;
+    cursor: pointer;
 }
 .sale-group:hover {
     background-color: rgba(13, 110, 253, 0.05);

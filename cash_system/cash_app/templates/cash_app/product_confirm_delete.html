@@ -15,20 +15,28 @@
                 
                 <div class="alert alert-warning">
                     <i class="bi bi-info-circle"></i>
-                    Количество на складе:
-                    <strong>
-                        {% if product.unit == 'kg' %}
-                            {{ product.quantity|floatformat:3 }} {{ product.get_unit_display }}
-                        {% else %}
-                            {{ product.quantity|floatformat:0 }} {{ product.get_unit_display }}
-                        {% endif %}
-                    </strong><br>
-                    Срок годности: <strong>{{ product.expiration_date|date:"d.m.Y" }}</strong>
+                    <strong>Информация о товаре:</strong><br>
+                    <ul class="mb-0 mt-2">
+                        <li>Категория: <strong>{{ product.category.name|default:"—" }}</strong></li>
+                        <li>Единица измерения: <strong>{{ product.get_unit_display }}</strong></li>
+                        <li>Цена: <strong>{{ product.price|floatformat:2 }} ₽</strong></li>
+                        <li>Срок годности: <strong>{{ product.expiration_date|date:"d.m.Y" }}</strong></li>
+                    </ul>
+                </div>
+                
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                    <strong>Внимание!</strong> Товар будет полностью удален из системы:
+                    <ul class="mb-0 mt-2">
+                        <li>Со всех складов</li>
+                        <li>Из всех прайс-листов</li>
+                        <li>Из истории операций (если нет записей)</li>
+                    </ul>
                 </div>
                 
                 <p class="text-danger">
                     <i class="bi bi-exclamation-triangle-fill"></i>
-                    Внимание! Это действие невозможно отменить. Все данные о товаре будут удалены.
+                    Это действие невозможно отменить. Все данные о товаре будут удалены.
                 </p>
                 
                 <form method="post">
@@ -38,7 +46,7 @@
                             <i class="bi bi-x-lg"></i> Отмена
                         </a>
                         <button type="submit" class="btn btn-danger">
-                            <i class="bi bi-trash"></i> Удалить
+                            <i class="bi bi-trash"></i> Удалить навсегда
                         </button>
                     </div>
                 </form>

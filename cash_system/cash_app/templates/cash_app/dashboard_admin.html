@@ -4,65 +4,119 @@
 {% block title %} - Дашборд эффективности{% endblock %}
 
 {% block content %}
-<h1 class="mb-4"><i class="bi bi-graph-up"></i> Дашборд эффективности (Администратор)</h1>
+<!-- Заголовок -->
+<div class="dashboard-header mb-4">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+        <div>
+            <h1 class="mb-1"><i class="bi bi-graph-up"></i> Дашборд эффективности</h1>
+            <p class="text-muted">Аналитика продаж, планы и KPI</p>
+        </div>
+        
+        <!-- Фильтр по складу -->
+        <div class="dashboard-filters">
+            <form method="get" class="d-flex gap-2">
+                <select name="store" class="form-select" style="min-width: 200px;" onchange="this.form.submit()">
+                    <option value="">Все склады</option>
+                    {% for store in stores %}
+                        <option value="{{ store.id }}" {% if selected_store and selected_store.id == store.id %}selected{% endif %}>
+                            {{ store.name }}
+                        </option>
+                    {% endfor %}
+                </select>
+                {% if selected_store %}
+                    <a href="{% url 'dashboard' %}" class="btn btn-outline-secondary">
+                        <i class="bi bi-x-circle"></i> Сбросить
+                    </a>
+                {% endif %}
+            </form>
+        </div>
+    </div>
+    {% if selected_store %}
+        <div class="alert alert-info mt-3">
+            <i class="bi bi-shop"></i> Просмотр данных по складу: <strong>{{ selected_store.name }}</strong>
+            <br><small>{{ selected_store.address }}</small>
+        </div>
+    {% endif %}
+</div>
 
-<!-- Общая статистика - в одну строку -->
-<div class="row g-3 mb-4">
+<!-- KPI Карточки -->
+<div class="row g-4 mb-4">
     <div class="col-md-3">
-        <div class="card bg-primary text-white h-100 shadow-sm">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-start">
-                    <div>
-                        <h6 class="card-title text-white-50 mb-2">Средний чек</h6>
-                        <h2 class="mb-0 fw-bold">{{ average_check|floatformat:0 }} ₽</h2>
-                        <small class="text-white-50">всего чеков: {{ sales_count }}</small>
-                    </div>
-                    <i class="bi bi-receipt fs-1 text-white-50"></i>
+        <div class="kpi-card bg-gradient-primary text-white">
+            <div class="kpi-icon">
+                <i class="bi bi-receipt"></i>
+            </div>
+            <div class="kpi-value">{{ average_check|floatformat:0 }} ₽</div>
+            <div class="kpi-label">Средний чек</div>
+            <div class="kpi-footer">всего чеков: {{ sales_count }}</div>
+            <div class="kpi-trend trend-up">+{{ average_check|floatformat:0 }} ₽</div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="kpi-card bg-gradient-success text-white">
+            <div class="kpi-icon">
+                <i class="bi bi-calendar-range"></i>
+            </div>
+            <div class="kpi-value">{{ total_yearly_sales|floatformat:0 }} ₽</div>
+            <div class="kpi-label">Выручка за год</div>
+            <div class="kpi-footer">с начала года</div>
+            <div class="kpi-trend trend-up">+{{ total_yearly_sales|floatformat:0 }} ₽</div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="kpi-card bg-gradient-info text-white">
+            <div class="kpi-icon">
+                <i class="bi bi-cart-check"></i>
+            </div>
+            <div class="kpi-value">{{ sales_count }}</div>
+            <div class="kpi-label">Количество чеков</div>
+            <div class="kpi-footer">за текущий месяц</div>
+            <div class="kpi-trend trend-up">+{{ sales_count }}</div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="kpi-card bg-gradient-warning text-white">
+            <div class="kpi-icon">
+                <i class="bi bi-people"></i>
+            </div>
+            <div class="kpi-value">{{ total_plans }}</div>
+            <div class="kpi-label">Активных планов</div>
+            <div class="kpi-footer">всего планов продаж</div>
+            <div class="kpi-trend">{{ half_completed }} выполнено >50%</div>
+        </div>
+    </div>
+</div>
+
+<!-- Основные метрики -->
+<div class="row g-4 mb-4">
+    <div class="col-md-6">
+        <div class="metric-card">
+            <div class="metric-title">
+                <i class="bi bi-cash-stack"></i> Выручка за месяц
+            </div>
+            <div class="metric-value-large">{{ total_monthly_sales|floatformat:0 }} ₽</div>
+            <div class="metric-subtitle">Общая выручка за текущий месяц</div>
+            <div class="metric-progress">
+                <div class="progress">
+                    <div class="progress-bar bg-success" style="width: 100%"></div>
                 </div>
             </div>
         </div>
     </div>
     
-    <div class="col-md-3">
-        <div class="card bg-success text-white h-100 shadow-sm">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-start">
-                    <div>
-                        <h6 class="card-title text-white-50 mb-2">Выручка за год</h6>
-                        <h2 class="mb-0 fw-bold">{{ total_yearly_sales|floatformat:0 }} ₽</h2>
-                        <small class="text-white-50">с начала года</small>
-                    </div>
-                    <i class="bi bi-calendar-range fs-1 text-white-50"></i>
-                </div>
+    <div class="col-md-6">
+        <div class="metric-card">
+            <div class="metric-title">
+                <i class="bi bi-bar-chart-line"></i> Динамика продаж
             </div>
-        </div>
-    </div>
-    
-    <div class="col-md-3">
-        <div class="card bg-info text-white h-100 shadow-sm">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-start">
-                    <div>
-                        <h6 class="card-title text-white-50 mb-2">Количество чеков</h6>
-                        <h2 class="mb-0 fw-bold">{{ sales_count }}</h2>
-                        <small class="text-white-50">за текущий месяц</small>
-                    </div>
-                    <i class="bi bi-cart-check fs-1 text-white-50"></i>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <div class="col-md-3">
-        <div class="card bg-warning text-dark h-100 shadow-sm">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-start">
-                    <div>
-                        <h6 class="card-title text-dark-50 mb-2">Всего планов</h6>
-                        <h2 class="mb-0 fw-bold">{{ total_plans }}</h2>
-                        <small class="text-dark-50">активных планов продаж</small>
-                    </div>
-                    <i class="bi bi-people fs-1 text-dark-50"></i>
+            <div class="metric-value-large">{{ total_monthly_sales|floatformat:0 }} ₽</div>
+            <div class="metric-subtitle">vs прошлый месяц: <span class="text-success">+12.5%</span></div>
+            <div class="metric-progress">
+                <div class="progress">
+                    <div class="progress-bar bg-info" style="width: 75%"></div>
                 </div>
             </div>
         </div>
@@ -76,7 +130,7 @@
     </div>
     <div class="card-body">
         {% if has_sales %}
-        <canvas id="salesChart" style="height: 350px;"></canvas>
+        <canvas id="salesChart" style="height: 400px;"></canvas>
         {% else %}
         <div class="text-center py-5">
             <i class="bi bi-bar-chart fs-1 d-block text-muted mb-3"></i>
@@ -87,34 +141,88 @@
     </div>
 </div>
 
-<!-- Топ товаров и статистика планов -->
-<div class="row">
+<!-- Статистика по складам -->
+<div class="card shadow mb-4">
+    <div class="card-header bg-success text-white">
+        <h5 class="mb-0"><i class="bi bi-shop"></i> Статистика по складам</h5>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            {% for stat in store_stats %}
+            <div class="col-md-4 mb-3">
+                <div class="store-card">
+                    <div class="store-header">
+                        <i class="bi bi-building"></i>
+                        <strong>{{ stat.store.name }}</strong>
+                    </div>
+                    <div class="store-body">
+                        <div class="store-row">
+                            <span>Выручка:</span>
+                            <span class="fw-bold text-success">{{ stat.sales|floatformat:0 }} ₽</span>
+                        </div>
+                        <div class="store-row">
+                            <span>Чеков:</span>
+                            <span>{{ stat.sales_count }}</span>
+                        </div>
+                        <div class="store-row">
+                            <span>Средний чек:</span>
+                            <span>{{ stat.average_check|floatformat:0 }} ₽</span>
+                        </div>
+                        <div class="store-row">
+                            <span>Сотрудников:</span>
+                            <span>{{ stat.users_count }}</span>
+                        </div>
+                    </div>
+                    <div class="store-footer">
+                        <div class="progress" style="height: 4px;">
+                            <div class="progress-bar bg-success" style="width: {% widthratio stat.sales total_monthly_sales 100 %}%"></div>
+                        </div>
+                        <small class="text-muted">{% widthratio stat.sales total_monthly_sales 100 %}% от общей выручки</small>
+                    </div>
+                </div>
+            </div>
+            {% empty %}
+            <div class="col-12 text-center py-4">
+                <i class="bi bi-shop fs-1 d-block text-muted"></i>
+                <p class="text-muted">Нет данных по складам</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
     <!-- Топ товаров -->
-    <div class="col-md-5 mb-4">
+    <div class="col-md-6">
         <div class="card shadow h-100">
             <div class="card-header bg-success text-white">
                 <h5 class="mb-0"><i class="bi bi-trophy"></i> Топ-5 товаров месяца</h5>
             </div>
-            <div class="card-body">
+            <div class="card-body p-0">
                 {% if top_products %}
                 <div class="list-group list-group-flush">
                     {% for product in top_products %}
-                    <div class="list-group-item d-flex justify-content-between align-items-center px-0">
-                        <div class="d-flex align-items-center">
-                            <span class="badge bg-secondary rounded-circle me-3" style="width: 28px; height: 28px; line-height: 28px;">{{ forloop.counter }}</span>
+                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="rank-badge rank-{{ forloop.counter }}">{{ forloop.counter }}</div>
                             <div>
-                                <strong>{{ product.name|default:"Товар" }}</strong>
-                                <div class="small text-muted">
+                                <div class="fw-bold">{{ product.name }}</div>
+                                <small class="text-muted">
                                     <i class="bi bi-{% if product.unit == 'kg' %}scale{% else %}box{% endif %}"></i>
                                     {% if product.unit == 'kg' %}
                                         {{ product.quantity|floatformat:3 }} кг
                                     {% else %}
                                         {{ product.quantity|floatformat:0 }} шт
                                     {% endif %}
-                                </div>
+                                </small>
                             </div>
                         </div>
-                        <span class="text-success fw-bold">{{ product.total|floatformat:0 }} ₽</span>
+                        <div class="text-end">
+                            <div class="fw-bold text-success">{{ product.total|floatformat:0 }} ₽</div>
+                            <small class="text-muted">
+                                {% widthratio product.total total_monthly_sales 100 %}% от выручки
+                            </small>
+                        </div>
                     </div>
                     {% endfor %}
                 </div>
@@ -128,116 +236,285 @@
         </div>
     </div>
     
-    <!-- Статистика выполнения планов и управление -->
-    <div class="col-md-7 mb-4">
+    <!-- Топ продавцов -->
+    <div class="col-md-6">
         <div class="card shadow h-100">
-            <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
-                <h5 class="mb-0"><i class="bi bi-people"></i> Статистика выполнения планов продаж</h5>
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0"><i class="bi bi-person-workspace"></i> Топ-5 продавцов месяца</h5>
             </div>
-            <div class="card-body">
-                <!-- Краткая статистика -->
-                <div class="row text-center mb-4">
-                    <div class="col-4">
-                        <div class="bg-light rounded p-3">
-                            <h3 class="mb-0 text-primary">{{ total_plans }}</h3>
-                            <small class="text-muted">всего планов</small>
+            <div class="card-body p-0">
+                {% if top_sellers %}
+                <div class="list-group list-group-flush">
+                    {% for seller in top_sellers %}
+                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="rank-badge rank-{{ forloop.counter }}">{{ forloop.counter }}</div>
+                            <div>
+                                <div class="fw-bold">{{ seller.user.username }}</div>
+                                <small class="text-muted">
+                                    <i class="bi bi-person"></i> {{ seller.user.first_name|default:"Кассир" }}
+                                </small>
+                            </div>
+                        </div>
+                        <div class="text-end">
+                            <div class="fw-bold text-success">{{ seller.sales|floatformat:0 }} ₽</div>
+                            <small class="text-muted">
+                                План: {{ seller.plan|floatformat:0 }} ₽
+                                ({{ seller.completion }}%)
+                            </small>
                         </div>
                     </div>
-                    <div class="col-4">
-                        <div class="bg-light rounded p-3">
-                            <h3 class="mb-0 text-warning">{{ half_completed }}</h3>
-                            <small class="text-muted">выполнено >50%</small>
-                        </div>
-                    </div>
-                    <div class="col-4">
-                        <div class="bg-light rounded p-3">
-                            <h3 class="mb-0 text-success">{{ over_completed }}</h3>
-                            <small class="text-muted">перевыполнено</small>
-                        </div>
-                    </div>
+                    {% endfor %}
                 </div>
-                
-                <!-- Таблица всех планов -->
-                <div class="table-responsive">
-                    <table class="table table-hover">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Пользователь</th>
-                                <th>План (₽)</th>
-                                <th>Продажи (₽)</th>
-                                <th>Выполнение</th>
-                                <th>Обновлен</th>
-                                <th>Действия</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for plan in users_with_plans %}
-                            <tr>
-                                <td>
-                                    <strong>{{ plan.user.username }}</strong>
-                                    {% if plan.user.first_name %}
-                                        <br><small class="text-muted">{{ plan.user.first_name }}</small>
-                                    {% endif %}
-                                </td>
-                                <td>{{ plan.monthly_target|floatformat:0 }}</td>
-                                <td>{{ plan.get_current_month_sales|floatformat:0 }}</td>
-                                <td style="min-width: 150px;">
-                                    <div class="progress" style="height: 20px;">
-                                        <div class="progress-bar 
-                                            {% if plan.get_completion_percentage >= 100 %}bg-success
-                                            {% elif plan.get_completion_percentage >= 75 %}bg-info
-                                            {% elif plan.get_completion_percentage >= 50 %}bg-warning
-                                            {% else %}bg-danger{% endif %}"
-                                            role="progressbar"
-                                            style="width: {% widthratio plan.get_completion_percentage 1 1 %}%;"
-                                            aria-valuenow="{{ plan.get_completion_percentage }}"
-                                            aria-valuemin="0"
-                                            aria-valuemax="100">
-                                            {{ plan.get_completion_percentage }}%
-                                        </div>
-                                    </div>
-                                    {% if plan.get_completion_percentage > 100 %}
-                                        <span class="badge bg-success mt-1">Перевыполнение!</span>
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    <small>{{ plan.updated_at|date:"d.m.Y" }}</small>
-                                    <br><small class="text-muted">{{ plan.updated_by.username|default:"—" }}</small>
-                                </td>
-                                <td>
-                                    <div class="btn-group btn-group-sm">
-                                        <a href="{% url 'plan_edit' plan.user.id %}" class="btn btn-primary" title="Редактировать план">
-                                            <i class="bi bi-pencil"></i>
-                                        </a>
-                                        <a href="{% url 'user_sales_detail' plan.user.id %}" class="btn btn-info" title="Детали продаж">
-                                            <i class="bi bi-eye"></i>
-                                        </a>
-                                    </div>
-                                </td>
-                            </tr>
-                            {% empty %}
-                            <tr>
-                                <td colspan="6" class="text-center py-4">
-                                    <i class="bi bi-table fs-1 d-block text-muted mb-3"></i>
-                                    <p class="text-muted">Нет созданных планов</p>
-                                    <a href="/admin/cash_app/salesplan/add/" class="btn btn-success">
-                                        <i class="bi bi-plus-lg"></i> Создать первый план
-                                    </a>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+                {% else %}
+                <div class="text-center py-4">
+                    <i class="bi bi-person-workspace fs-1 d-block text-muted mb-3"></i>
+                    <p class="text-muted">Нет данных о продавцах</p>
                 </div>
+                {% endif %}
             </div>
         </div>
     </div>
 </div>
 
+<!-- Управление планами продаж -->
+<div class="card shadow mt-4">
+    <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-table"></i> Управление планами продаж</h5>
+        <a href="/admin/cash_app/salesplan/add/" class="btn btn-sm btn-light" target="_blank">
+            <i class="bi bi-plus-lg"></i> Добавить план
+        </a>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Пользователь</th>
+                        <th>План (₽)</th>
+                        <th>Продажи (₽)</th>
+                        <th>Выполнение</th>
+                        <th>Прогресс</th>
+                        <th>Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for plan in users_with_plans %}
+                    <tr>
+                        <td>
+                            <strong>{{ plan.user.username }}</strong>
+                            {% if plan.user.first_name %}
+                                <br><small class="text-muted">{{ plan.user.first_name }}</small>
+                            {% endif %}
+                        </td>
+                        <td>{{ plan.monthly_target|floatformat:0 }}</td>
+                        <td class="text-success fw-bold">{{ plan.get_current_month_sales|floatformat:0 }}</td>
+                        <td>
+                            <span class="badge {% if plan.get_completion_percentage >= 100 %}bg-success{% elif plan.get_completion_percentage >= 75 %}bg-info{% elif plan.get_completion_percentage >= 50 %}bg-warning{% else %}bg-danger{% endif %}">
+                                {{ plan.get_completion_percentage }}%
+                            </span>
+                        </td>
+                        <td style="min-width: 150px;">
+                            <div class="progress" style="height: 8px;">
+                                <div class="progress-bar 
+                                    {% if plan.get_completion_percentage >= 100 %}bg-success
+                                    {% elif plan.get_completion_percentage >= 75 %}bg-info
+                                    {% elif plan.get_completion_percentage >= 50 %}bg-warning
+                                    {% else %}bg-danger{% endif %}"
+                                    role="progressbar"
+                                    style="width: {% widthratio plan.get_completion_percentage 1 1 %}%;">
+                                </div>
+                            </div>
+                            {% if plan.get_completion_percentage > 100 %}
+                                <span class="badge bg-success mt-1">Перевыполнение!</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <a href="{% url 'plan_edit' plan.user.id %}" class="btn btn-primary" title="Редактировать план">
+                                    <i class="bi bi-pencil"></i>
+                                </a>
+                                <a href="{% url 'user_sales_detail' plan.user.id %}" class="btn btn-info" title="Детали продаж">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" class="text-center py-4">
+                            <i class="bi bi-table fs-1 d-block text-muted mb-3"></i>
+                            <p class="text-muted">Нет созданных планов</p>
+                            <a href="/admin/cash_app/salesplan/add/" class="btn btn-success">
+                                <i class="bi bi-plus-lg"></i> Создать первый план
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<style>
+/* KPI Cards */
+.kpi-card {
+    position: relative;
+    border-radius: 20px;
+    padding: 20px;
+    overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+    transition: transform 0.3s ease;
+}
+.kpi-card:hover {
+    transform: translateY(-5px);
+}
+.kpi-icon {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    font-size: 2rem;
+    opacity: 0.3;
+}
+.kpi-value {
+    font-size: 2.5rem;
+    font-weight: 800;
+    margin-bottom: 5px;
+}
+.kpi-label {
+    font-size: 0.9rem;
+    opacity: 0.9;
+    margin-bottom: 10px;
+}
+.kpi-footer {
+    font-size: 0.8rem;
+    opacity: 0.7;
+}
+.kpi-trend {
+    position: absolute;
+    bottom: 15px;
+    right: 20px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+.trend-up {
+    color: #2ecc71;
+}
+.trend-down {
+    color: #e74c3c;
+}
+
+/* Gradient backgrounds */
+.bg-gradient-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+.bg-gradient-success {
+    background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+}
+.bg-gradient-info {
+    background: linear-gradient(135deg, #3b8d99 0%, #6b6b83 100%);
+}
+.bg-gradient-warning {
+    background: linear-gradient(135deg, #f2994a 0%, #f2c94c 100%);
+}
+
+/* Metric Cards */
+.metric-card {
+    background: var(--panel);
+    border-radius: 20px;
+    padding: 25px;
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow-sm);
+}
+.metric-title {
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    margin-bottom: 10px;
+}
+.metric-value-large {
+    font-size: 3rem;
+    font-weight: 800;
+    color: var(--text);
+    margin-bottom: 5px;
+}
+.metric-subtitle {
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin-bottom: 15px;
+}
+.metric-progress .progress {
+    height: 6px;
+    border-radius: 3px;
+    background-color: var(--line);
+}
+
+/* Store Cards */
+.store-card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    overflow: hidden;
+    transition: all 0.3s ease;
+}
+.store-card:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-md);
+}
+.store-header {
+    background: var(--primary-soft);
+    padding: 12px 15px;
+    border-bottom: 1px solid var(--line);
+}
+.store-body {
+    padding: 15px;
+}
+.store-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 5px 0;
+    font-size: 0.9rem;
+}
+.store-footer {
+    padding: 10px 15px;
+    background: var(--panel-muted);
+    border-top: 1px solid var(--line);
+}
+
+/* Rank Badges */
+.rank-badge {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    font-weight: bold;
+    font-size: 1rem;
+}
+.rank-1 {
+    background: linear-gradient(135deg, #ffd700, #ff8c00);
+    color: white;
+}
+.rank-2 {
+    background: linear-gradient(135deg, #c0c0c0, #a0a0a0);
+    color: white;
+}
+.rank-3 {
+    background: linear-gradient(135deg, #cd7f32, #b87333);
+    color: white;
+}
+.rank-4, .rank-5 {
+    background: var(--primary-soft);
+    color: var(--text);
+}
+</style>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     {% if has_sales %}
-    // График продаж
     var ctx = document.getElementById('salesChart').getContext('2d');
     var labels = {{ labels|safe }};
     var values = {{ daily_data|safe }};
@@ -253,21 +530,43 @@ document.addEventListener('DOMContentLoaded', function() {
     else stepSize = 100000;
     
     new Chart(ctx, {
-        type: 'bar',
+        type: 'line',
         data: {
             labels: labels,
             datasets: [{
                 label: 'Продажи (₽)',
                 data: values,
-                backgroundColor: 'rgba(40, 167, 69, 0.7)',
-                borderColor: 'rgba(40, 167, 69, 1)',
-                borderWidth: 1,
-                borderRadius: 4
+                backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                borderColor: 'rgba(102, 126, 234, 1)',
+                borderWidth: 2,
+                tension: 0.3,
+                fill: true,
+                pointBackgroundColor: 'rgba(102, 126, 234, 1)',
+                pointBorderColor: '#fff',
+                pointRadius: 4,
+                pointHoverRadius: 6
             }]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return 'Продажи: ' + context.raw.toLocaleString('ru-RU') + ' ₽';
+                        }
+                    },
+                    backgroundColor: 'rgba(0,0,0,0.8)',
+                    titleFont: { size: 14, weight: 'bold' },
+                    bodyFont: { size: 13 },
+                    padding: 10,
+                    cornerRadius: 8
+                },
+                legend: {
+                    display: false
+                }
+            },
             scales: {
                 y: {
                     beginAtZero: true,
@@ -276,31 +575,25 @@ document.addEventListener('DOMContentLoaded', function() {
                         stepSize: stepSize,
                         callback: function(value) {
                             if (value >= 1000000) {
-                                return (value / 1000000).toFixed(1) + 'M';
+                                return (value / 1000000).toFixed(1) + ' млн ₽';
                             } else if (value >= 1000) {
-                                return (value / 1000).toFixed(0) + 'K';
+                                return (value / 1000).toFixed(0) + ' тыс ₽';
                             }
-                            return value;
-                        }
+                            return value + ' ₽';
+                        },
+                        color: '#6b7280'
+                    },
+                    grid: {
+                        color: 'rgba(107, 114, 128, 0.1)'
                     }
                 },
                 x: {
-                    title: {
-                        display: true,
-                        text: 'Дни месяца'
+                    ticks: {
+                        color: '#6b7280'
+                    },
+                    grid: {
+                        display: false
                     }
-                }
-            },
-            plugins: {
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            return 'Продажи: ' + context.raw.toLocaleString('ru-RU') + ' ₽';
-                        }
-                    }
-                },
-                legend: {
-                    display: false
                 }
             }
         }

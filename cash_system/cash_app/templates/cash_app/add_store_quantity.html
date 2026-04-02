@@ -1,0 +1,56 @@
+{% extends 'cash_app/base.html' %}
+{% load static %}
+
+{% block title %} - Добавление товара на склад{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0"><i class="bi bi-box-seam"></i> Добавление товара на склад</h4>
+            </div>
+            <div class="card-body">
+                <h5 class="mb-3">Товар: <strong>{{ product.name }}</strong></h5>
+                
+                <form method="post">
+                    {% csrf_token %}
+                    
+                    <div class="mb-3">
+                        <label for="store_id" class="form-label">Выберите склад</label>
+                        <select name="store_id" id="store_id" class="form-select" required>
+                            <option value="">-- Выберите склад --</option>
+                            {% for store in stores %}
+                                <option value="{{ store.id }}">{{ store.name }} ({{ store.address }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="quantity" class="form-label">Количество</label>
+                        <input type="number" name="quantity" id="quantity" class="form-control" 
+                               step="{% if product.unit == 'kg' %}0.001{% else %}1{% endif %}" 
+                               min="{% if product.unit == 'kg' %}0.001{% else %}1{% endif %}" 
+                               required>
+                        <small class="text-muted">Единица измерения: {{ product.get_unit_display }}</small>
+                    </div>
+                    
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle"></i>
+                        Товар будет добавлен на склад с указанным количеством. Будет создана запись в истории поступлений.
+                    </div>
+                    
+                    <div class="d-flex justify-content-between">
+                        <a href="{% url 'product_list' %}" class="btn btn-secondary">
+                            <i class="bi bi-arrow-left"></i> Назад
+                        </a>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-lg"></i> Добавить
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

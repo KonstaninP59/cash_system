@@ -80,4 +80,7 @@ urlpatterns = [
     path('stores/create/', views.store_create, name='store_create'),
     path('stores/<int:pk>/edit/', views.store_edit, name='store_edit'),
     path('stores/<int:pk>/delete/', views.store_delete, name='store_delete'),
+
+    path('products/<int:product_id>/add-store-quantity/', views.add_store_quantity, name='add_store_quantity'),
+    path('api/store-product/<int:store_id>/<int:product_id>/', views.api_store_product, name='api_store_product'),
 ]
