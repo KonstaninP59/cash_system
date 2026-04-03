@@ -3,7 +3,11 @@ from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.models import User
 from django.utils.html import format_html
 
-from .models import Category, Coupon, History, Product, SalesPlan, PriceList, PriceListItem, StoreAddress, StoreProduct, UserProfile
+from .models import (
+    Category, Coupon, History, Product, SalesPlan, 
+    PriceList, PriceListItem, StoreAddress, StoreProduct, UserProfile,
+    SalarySettings, SalaryCalculation, Recipe, RecipeIngredient
+)
 
 
 class CategoryAdmin(admin.ModelAdmin):
@@ -12,8 +16,7 @@ class CategoryAdmin(admin.ModelAdmin):
 
 
 class ProductAdmin(admin.ModelAdmin):
-    # Убираем quantity из list_display (теперь количество хранится в StoreProduct)
-    list_display = ['name', 'category', 'base_price', 'price', 'unit', 'expiration_date', 'get_status', 'has_qr']
+    list_display = ['name', 'category', 'price', 'cost_price', 'profit', 'margin', 'unit', 'expiration_date', 'get_status', 'has_qr']
     list_filter = ['category', 'expiration_date', 'unit']
     search_fields = ['name']
     readonly_fields = ['qr_uuid', 'qr_code_preview']
@@ -23,13 +26,25 @@ class ProductAdmin(admin.ModelAdmin):
             'fields': ('name', 'category', 'unit', 'expiration_date')
         }),
         ('Цены', {
-            'fields': ('base_price', 'price')
+            'fields': ('base_price', 'price', 'cost_price')
         }),
         ('QR-код', {
             'fields': ('qr_code', 'qr_uuid', 'qr_code_preview'),
             'classes': ('collapse',)
         }),
     )
+    
+    def profit(self, obj):
+        profit_val = obj.price - obj.cost_price
+        return f"{profit_val:.2f} ₽"
+    profit.short_description = 'Прибыль с ед.'
+    
+    def margin(self, obj):
+        if obj.price > 0:
+            margin_val = ((obj.price - obj.cost_price) / obj.price) * 100
+            return f"{margin_val:.1f}%"
+        return "0%"
+    margin.short_description = 'Маржинальность'
 
     def get_status(self, obj):
         if obj.is_expired():
@@ -148,6 +163,52 @@ class CustomUserAdmin(UserAdmin):
             return obj.profile.store.name
         return '—'
     get_store.short_description = 'Склад'
+
+
+@admin.register(SalarySettings)
+class SalarySettingsAdmin(admin.ModelAdmin):
+    list_display = ['user', 'base_salary', 'commission_percent', 'bonus_percent', 'plan_completion_threshold', 'updated_at']
+    list_filter = ['user__is_staff']
+    search_fields = ['user__username']
+    readonly_fields = ['created_at', 'updated_at', 'updated_by']
+    
+    def save_model(self, request, obj, form, change):
+        if change:
+            obj.updated_by = request.user
+        super().save_model(request, obj, form, change)
+
+
+@admin.register(SalaryCalculation)
+class SalaryCalculationAdmin(admin.ModelAdmin):
+    list_display = ['user', 'month', 'year', 'total_salary', 'status', 'calculated_at']
+    list_filter = ['status', 'year', 'month']
+    search_fields = ['user__username']
+    readonly_fields = ['calculated_at', 'paid_at']
+
+
+@admin.register(Recipe)
+class RecipeAdmin(admin.ModelAdmin):
+    list_display = ['product', 'yield_quantity', 'cooking_time', 'created_at']
+    list_filter = ['created_at']
+    search_fields = ['product__name']
+    readonly_fields = ['created_at', 'updated_at']
+    
+    fieldsets = (
+        (None, {
+            'fields': ('product', 'yield_quantity', 'cooking_time', 'instructions')
+        }),
+        ('Даты', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+
+
+@admin.register(RecipeIngredient)
+class RecipeIngredientAdmin(admin.ModelAdmin):
+    list_display = ['recipe', 'ingredient', 'quantity']
+    list_filter = ['recipe__product__category']
+    search_fields = ['recipe__product__name', 'ingredient__name']
 
 
 # Регистрация моделей

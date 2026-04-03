@@ -23,22 +23,26 @@ class ProductForm(forms.ModelForm):
     
     class Meta:
         model = Product
-        fields = ['name', 'category', 'base_price', 'price', 'unit', 'expiration_date']
+        fields = ['name', 'category', 'base_price', 'price', 'cost_price', 'unit', 'expiration_date', 'is_composite']
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Название товара'}),
             'category': forms.Select(attrs={'class': 'form-control'}),
             'base_price': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0'}),
             'price': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0'}),
+            'cost_price': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0'}),
             'unit': forms.Select(attrs={'class': 'form-control'}),
             'expiration_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
+            'is_composite': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         }
         labels = {
             'name': 'Название',
             'category': 'Категория',
             'base_price': 'Базовая цена (для расчета в прайс-листах)',
-            'price': 'Цена продажи (обычный прайс)',
+            'price': 'Цена продажи',
+            'cost_price': 'Себестоимость',
             'unit': 'Единица измерения',
             'expiration_date': 'Срок годности',
+            'is_composite': 'Составное блюдо (готовится из ингредиентов)',
         }
 
 

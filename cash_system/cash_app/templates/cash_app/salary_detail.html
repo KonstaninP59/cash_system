@@ -1,0 +1,115 @@
+{% extends 'cash_app/base.html' %}
+{% load static %}
+
+{% block title %} - Детали зарплаты{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="bi bi-calculator"></i> Детали зарплаты</h1>
+    <a href="{% url 'salary_calculations' %}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left"></i> Назад
+    </a>
+</div>
+
+<div class="row">
+    <div class="col-md-4 mb-4">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Информация о сотруднике</h5>
+            </div>
+            <div class="card-body">
+                <p><strong>Сотрудник:</strong> {{ calculation.user.username }}</p>
+                <p><strong>Период:</strong> {{ calculation.month }}/{{ calculation.year }}</p>
+                <p><strong>Статус:</strong> 
+                    {% if calculation.status == 'draft' %}
+                        <span class="badge bg-secondary">Черновик</span>
+                    {% elif calculation.status == 'calculated' %}
+                        <span class="badge bg-info">Рассчитано</span>
+                    {% elif calculation.status == 'paid' %}
+                        <span class="badge bg-success">Выплачено</span>
+                    {% endif %}
+                </p>
+                {% if calculation.paid_at %}
+                    <p><strong>Дата выплаты:</strong> {{ calculation.paid_at|date:"d.m.Y H:i" }}</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4 mb-4">
+        <div class="card shadow">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0">Расчет зарплаты</h5>
+            </div>
+            <div class="card-body">
+                <p><strong>Оклад:</strong> {{ calculation.base_salary|floatformat:2 }} ₽</p>
+                <p><strong>Комиссия:</strong> {{ calculation.commission|floatformat:2 }} ₽</p>
+                <p><strong>Премия:</strong> {{ calculation.bonus|floatformat:2 }} ₽</p>
+                <hr>
+                <h4 class="text-success">Итого: {{ calculation.total_salary|floatformat:2 }} ₽</h4>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4 mb-4">
+        <div class="card shadow">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0">Показатели продаж</h5>
+            </div>
+            <div class="card-body">
+                <p><strong>Общая выручка:</strong> {{ calculation.total_sales|floatformat:2 }} ₽</p>
+                <p><strong>Выполнение плана:</strong> {{ calculation.plan_completion|floatformat:1 }}%</p>
+                <div class="progress mb-2">
+                    <div class="progress-bar bg-success" style="width: {{ calculation.plan_completion }}%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow">
+    <div class="card-header bg-info text-white">
+        <h5 class="mb-0">Детализация продаж</h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead class="table-light">
+                    <tr>
+                        <th>Дата</th>
+                        <th>Товар</th>
+                        <th>Количество</th>
+                        <th>Сумма</th>
+                        <th>Склад</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for sale in sales %}
+                    <tr>
+                        <td>{{ sale.date|date:"d.m.Y H:i" }}</td>
+                        <td>{{ sale.product.name }}</td>
+                        <td>{{ sale.quantity }} {{ sale.product.get_unit_display }}</td>
+                        <td class="text-success">{{ sale.total_price|floatformat:2 }} ₽</td>
+                        <td>{{ sale.store.name|default:"—" }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="5" class="text-center py-4">
+                            <i class="bi bi-cart fs-1 d-block text-muted"></i>
+                            <p class="text-muted">Нет продаж за этот период</p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot class="table-light">
+                    <tr>
+                        <th colspan="3" class="text-end">ИТОГО:</th>
+                        <th class="text-success">{{ total_sales_amount|floatformat:2 }} ₽</th>
+                        <td></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

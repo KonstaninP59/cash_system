@@ -9,7 +9,7 @@
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
         <div>
             <h1 class="mb-1"><i class="bi bi-graph-up"></i> Моя эффективность</h1>
-            <p class="text-muted">Ваша личная аналитика продаж и выполнение плана</p>
+            <p class="text-muted">Ваша личная аналитика продаж, планы и зарплата</p>
         </div>
         <div class="dashboard-info">
             <div class="alert alert-info mb-0">
@@ -111,6 +111,69 @@
             Выполнено {{ completion_percentage }}% от месячного плана. 
             Средняя выручка в день: {{ daily_average|floatformat:0 }} ₽
         </p>
+    </div>
+</div>
+
+<!-- Карточка зарплаты -->
+<div class="card shadow mb-4">
+    <div class="card-header bg-success text-white">
+        <h5 class="mb-0"><i class="bi bi-calculator"></i> Предварительный расчет зарплаты</h5>
+    </div>
+    <div class="card-body">
+        {% if salary_settings %}
+            <div class="row">
+                <div class="col-md-3 text-center">
+                    <div class="salary-card">
+                        <div class="salary-label">Оклад</div>
+                        <div class="salary-value">{{ salary_settings.base_salary|floatformat:0 }} ₽</div>
+                    </div>
+                </div>
+                <div class="col-md-3 text-center">
+                    <div class="salary-card">
+                        <div class="salary-label">Комиссия ({{ salary_settings.commission_percent }}%)</div>
+                        <div class="salary-value">{{ commission|floatformat:0 }} ₽</div>
+                        <div class="salary-note">от {{ monthly_sales|floatformat:0 }} ₽ продаж</div>
+                    </div>
+                </div>
+                <div class="col-md-3 text-center">
+                    <div class="salary-card">
+                        <div class="salary-label">Премия ({{ salary_settings.bonus_percent }}%)</div>
+                        <div class="salary-value {% if plan_completion >= salary_settings.plan_completion_threshold %}text-success{% else %}text-muted{% endif %}">
+                            {% if plan_completion >= salary_settings.plan_completion_threshold %}
+                                {{ bonus|floatformat:0 }} ₽
+                            {% else %}
+                                0 ₽
+                            {% endif %}
+                        </div>
+                        <div class="salary-note">
+                            {% if plan_completion >= salary_settings.plan_completion_threshold %}
+                                ✅ План выполнен на {{ plan_completion }}%
+                            {% else %}
+                                ⚠️ План выполнен на {{ plan_completion }}% (нужно {{ salary_settings.plan_completion_threshold }}%)
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3 text-center">
+                    <div class="salary-card salary-total">
+                        <div class="salary-label">Итого к выплате</div>
+                        <div class="salary-value text-success fw-bold">{{ total_salary|floatformat:0 }} ₽</div>
+                        <div class="salary-note">за текущий месяц</div>
+                    </div>
+                </div>
+            </div>
+            <div class="alert alert-info mt-3 mb-0">
+                <i class="bi bi-info-circle"></i>
+                <strong>Как рассчитывается:</strong>
+                Оклад + (Выручка × {{ salary_settings.commission_percent }}%) + Премия ({{ salary_settings.bonus_percent }}% от оклада при выполнении плана ≥ {{ salary_settings.plan_completion_threshold }}%)
+            </div>
+        {% else %}
+            <div class="text-center py-4">
+                <i class="bi bi-calculator fs-1 d-block text-muted mb-3"></i>
+                <h5 class="text-muted">Настройки зарплаты не заданы</h5>
+                <p class="text-muted">Обратитесь к администратору для настройки вашей зарплаты</p>
+            </div>
+        {% endif %}
     </div>
 </div>
 
@@ -269,9 +332,6 @@
 .trend-up {
     color: #2ecc71;
 }
-.trend-down {
-    color: #e74c3c;
-}
 
 /* Gradient backgrounds */
 .bg-gradient-primary {
@@ -317,6 +377,33 @@
     height: 6px;
     border-radius: 3px;
     background-color: var(--line);
+}
+
+/* Salary Cards */
+.salary-card {
+    background: var(--panel-soft);
+    border-radius: 16px;
+    padding: 15px;
+    border: 1px solid var(--line);
+}
+.salary-label {
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin-bottom: 8px;
+}
+.salary-value {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: var(--text);
+}
+.salary-note {
+    font-size: 0.7rem;
+    color: var(--muted);
+    margin-top: 5px;
+}
+.salary-total {
+    background: linear-gradient(135deg, var(--success-soft) 0%, transparent 100%);
+    border-color: var(--success);
 }
 
 /* Rank Badges */

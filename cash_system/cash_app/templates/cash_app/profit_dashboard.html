@@ -1,0 +1,507 @@
+{% extends 'cash_app/base.html' %}
+{% load static %}
+
+{% block title %} - Дашборд прибыли{% endblock %}
+
+{% block content %}
+<div class="dashboard-header mb-4">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+        <div>
+            <h1 class="mb-1"><i class="bi bi-pie-chart"></i> Дашборд прибыли</h1>
+            <p class="text-muted">Анализ прибыли, себестоимости и маржинальности</p>
+        </div>
+        
+        <div class="dashboard-filters">
+            <div class="d-flex gap-2 flex-wrap">
+                <div class="btn-group" role="group">
+                    <a href="?period=current{% if selected_store %}&store={{ selected_store.id }}{% endif %}" 
+                       class="btn btn-outline-primary {% if period == 'current' %}active{% endif %}">
+                        Текущий месяц
+                    </a>
+                    <a href="?period=previous{% if selected_store %}&store={{ selected_store.id }}{% endif %}" 
+                       class="btn btn-outline-primary {% if period == 'previous' %}active{% endif %}">
+                        Предыдущий месяц
+                    </a>
+                </div>
+                
+                <form method="get" class="d-flex gap-2">
+                    <select name="month" class="form-select" style="width: 130px;">
+                        {% for m in "123456789101112"|make_list %}
+                            <option value="{{ m }}" {% if current_month == m|add:0 %}selected{% endif %}>
+                                {% if m == "1" %}Январь{% elif m == "2" %}Февраль{% elif m == "3" %}Март{% elif m == "4" %}Апрель{% elif m == "5" %}Май{% elif m == "6" %}Июнь{% elif m == "7" %}Июль{% elif m == "8" %}Август{% elif m == "9" %}Сентябрь{% elif m == "10" %}Октябрь{% elif m == "11" %}Ноябрь{% else %}Декабрь{% endif %}
+                            </option>
+                        {% endfor %}
+                    </select>
+                    <select name="year" class="form-select" style="width: 100px;">
+                        <option value="2024" {% if current_year == 2024 %}selected{% endif %}>2024</option>
+                        <option value="2025" {% if current_year == 2025 %}selected{% endif %}>2025</option>
+                        <option value="2026" {% if current_year == 2026 %}selected{% endif %}>2026</option>
+                    </select>
+                    <input type="hidden" name="period" value="custom">
+                    {% if selected_store %}
+                        <input type="hidden" name="store" value="{{ selected_store.id }}">
+                    {% endif %}
+                    <button type="submit" class="btn btn-primary">Показать</button>
+                </form>
+                
+                <form method="get" class="d-flex gap-2">
+                    <select name="store" class="form-select" style="min-width: 200px;" onchange="this.form.submit()">
+                        <option value="">Все склады</option>
+                        {% for store in stores %}
+                            <option value="{{ store.id }}" {% if selected_store and selected_store.id == store.id %}selected{% endif %}>
+                                {{ store.name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                    <input type="hidden" name="period" value="{{ period }}">
+                    <input type="hidden" name="month" value="{{ current_month }}">
+                    <input type="hidden" name="year" value="{{ current_year }}">
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    {% if selected_store %}
+        <div class="alert alert-info mt-3">
+            <i class="bi bi-shop"></i> Данные по складу: <strong>{{ selected_store.name }}</strong>
+        </div>
+    {% endif %}
+</div>
+
+<!-- KPI Карточки -->
+<div class="row g-4 mb-4">
+    <div class="col-md-3">
+        <div class="kpi-card bg-gradient-primary text-white">
+            <div class="kpi-icon">
+                <i class="bi bi-cash-stack"></i>
+            </div>
+            <div class="kpi-value">{{ total_revenue|floatformat:0 }} ₽</div>
+            <div class="kpi-label">Выручка</div>
+            <div class="kpi-footer">за {{ current_month_name|lower }}</div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="kpi-card bg-gradient-warning text-white">
+            <div class="kpi-icon">
+                <i class="bi bi-box-seam"></i>
+            </div>
+            <div class="kpi-value">{{ total_cost|floatformat:0 }} ₽</div>
+            <div class="kpi-label">Себестоимость</div>
+            <div class="kpi-footer">затраты на товары</div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="kpi-card bg-gradient-success text-white">
+            <div class="kpi-icon">
+                <i class="bi bi-graph-up"></i>
+            </div>
+            <div class="kpi-value">{{ total_profit|floatformat:0 }} ₽</div>
+            <div class="kpi-label">Валовая прибыль</div>
+            <div class="kpi-footer">маржа {{ profit_margin }}%</div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="kpi-card bg-gradient-info text-white">
+            <div class="kpi-icon">
+                <i class="bi bi-calculator"></i>
+            </div>
+            <div class="kpi-value">{{ total_salary_expense|floatformat:0 }} ₽</div>
+            <div class="kpi-label">Расходы на зарплату</div>
+            <div class="kpi-footer">за {{ current_month_name|lower }}</div>
+        </div>
+    </div>
+</div>
+
+<!-- Чистая прибыль -->
+<div class="row g-4 mb-4">
+    <div class="col-md-12">
+        <div class="metric-card text-center">
+            <div class="metric-title">
+                <i class="bi bi-trophy"></i> ЧИСТАЯ ПРИБЫЛЬ
+            </div>
+            <div class="metric-value-large {% if net_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
+                {{ net_profit|floatformat:0 }} ₽
+            </div>
+            <div class="metric-subtitle">
+                Выручка - Себестоимость - Зарплаты
+            </div>
+            <div class="metric-progress mt-3">
+                <div class="progress" style="height: 8px;">
+                    <div class="progress-bar bg-success" style="width: {% widthratio net_profit total_revenue 100 %}%"></div>
+                </div>
+                <small class="text-muted">{% widthratio net_profit total_revenue 100 %}% от выручки</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- График выручки и прибыли -->
+<div class="card shadow mb-4">
+    <div class="card-header bg-primary text-white">
+        <h5 class="mb-0"><i class="bi bi-bar-chart"></i> Динамика выручки и прибыли</h5>
+    </div>
+    <div class="card-body">
+        {% if has_sales %}
+        <canvas id="profitChart" style="height: 400px;"></canvas>
+        {% else %}
+        <div class="text-center py-5">
+            <i class="bi bi-bar-chart fs-1 d-block text-muted mb-3"></i>
+            <h5 class="text-muted">Нет данных о продажах за выбранный период</h5>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Топ товаров по прибыли -->
+<div class="card shadow mb-4">
+    <div class="card-header bg-success text-white">
+        <h5 class="mb-0"><i class="bi bi-trophy"></i> Топ-10 товаров по прибыли</h5>
+    </div>
+    <div class="card-body p-0">
+        {% if profit_by_product %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>#</th>
+                        <th>Товар</th>
+                        <th>Продано</th>
+                        <th>Выручка</th>
+                        <th>Себестоимость</th>
+                        <th>Прибыль</th>
+                        <th>Маржа</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in profit_by_product %}
+                    <tr>
+                        <td class="fw-bold">{{ forloop.counter }}</td>
+                        <td>
+                            <strong>{{ item.name }}</strong>
+                            <br><small class="text-muted">{{ item.unit }}</small>
+                        </td>
+                        <td>{{ item.quantity|floatformat:1 }}</td>
+                        <td class="text-primary">{{ item.revenue|floatformat:0 }} ₽</td>
+                        <td class="text-warning">{{ item.cost|floatformat:0 }} ₽</td>
+                        <td class="text-success fw-bold">{{ item.profit|floatformat:0 }} ₽</td>
+                        <td>
+                            <span class="badge {% if item.margin >= 50 %}bg-success{% elif item.margin >= 30 %}bg-info{% elif item.margin >= 10 %}bg-warning{% else %}bg-danger{% endif %}">
+                                {{ item.margin|floatformat:1 }}%
+                            </span>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-4">
+            <i class="bi bi-trophy fs-1 d-block text-muted"></i>
+            <p class="text-muted">Нет данных о продажах</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Детали зарплат (если есть) -->
+{% if salary_details %}
+<div class="card shadow mb-4">
+    <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-people"></i> Детализация зарплат</h5>
+        <span class="badge bg-light text-dark">Всего: {{ total_salary_expense|floatformat:0 }} ₽</span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Сотрудник</th>
+                        <th>Оклад</th>
+                        <th>Комиссия</th>
+                        <th>Премия</th>
+                        <th>Итого</th>
+                        <th>Статус</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for salary in salary_details %}
+                    <tr>
+                        <td>
+                            <strong>{{ salary.user.username }}</strong>
+                            {% if salary.user.first_name %}
+                                <br><small>{{ salary.user.first_name }}</small>
+                            {% endif %}
+                        </td>
+                        <td>{{ salary.base_salary|floatformat:0 }} ₽</td>
+                        <td>{{ salary.commission|floatformat:0 }} ₽</td>
+                        <td>{{ salary.bonus|floatformat:0 }} ₽</td>
+                        <td class="fw-bold text-success">{{ salary.total|floatformat:0 }} ₽</td>
+                        <td>
+                            {% if salary.status == 'calculated' %}
+                                <span class="badge bg-info">Рассчитано</span>
+                            {% elif salary.status == 'paid' %}
+                                <span class="badge bg-success">Выплачено</span>
+                            {% else %}
+                                <span class="badge bg-secondary">Черновик</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot class="table-light">
+                    <tr>
+                        <th colspan="4" class="text-end">ИТОГО:</th>
+                        <th class="text-success">{{ total_salary_expense|floatformat:0 }} ₽</th>
+                        <th></th>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Статистика по складам -->
+<div class="card shadow">
+    <div class="card-header bg-info text-white">
+        <h5 class="mb-0"><i class="bi bi-shop"></i> Прибыль по складам</h5>
+    </div>
+    <div class="card-body">
+        {% if store_profit_stats %}
+        <div class="row">
+            {% for stat in store_profit_stats %}
+            <div class="col-md-4 mb-3">
+                <div class="store-profit-card">
+                    <div class="store-profit-name">
+                        <i class="bi bi-building"></i> {{ stat.store.name }}
+                    </div>
+                    <div class="store-profit-stats">
+                        <div class="profit-item">
+                            <span>Выручка:</span>
+                            <strong class="text-primary">{{ stat.revenue|floatformat:0 }} ₽</strong>
+                        </div>
+                        <div class="profit-item">
+                            <span>Себестоимость:</span>
+                            <strong class="text-warning">{{ stat.cost|floatformat:0 }} ₽</strong>
+                        </div>
+                        <div class="profit-item">
+                            <span>Прибыль:</span>
+                            <strong class="text-success">{{ stat.profit|floatformat:0 }} ₽</strong>
+                        </div>
+                        <div class="profit-item">
+                            <span>Маржа:</span>
+                            <strong>{{ stat.margin|floatformat:1 }}%</strong>
+                        </div>
+                    </div>
+                    <div class="progress mt-2" style="height: 4px;">
+                        <div class="progress-bar bg-success" style="width: {% widthratio stat.profit total_profit 100 %}%"></div>
+                    </div>
+                    <small class="text-muted">{% widthratio stat.profit total_profit 100 %}% от общей прибыли</small>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center py-4">
+            <i class="bi bi-shop fs-1 d-block text-muted"></i>
+            <p class="text-muted">Нет данных по складам</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<style>
+.kpi-card {
+    position: relative;
+    border-radius: 20px;
+    padding: 20px;
+    overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+    transition: transform 0.3s ease;
+}
+.kpi-card:hover {
+    transform: translateY(-5px);
+}
+.kpi-icon {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    font-size: 2rem;
+    opacity: 0.3;
+}
+.kpi-value {
+    font-size: 2.5rem;
+    font-weight: 800;
+    margin-bottom: 5px;
+}
+.kpi-label {
+    font-size: 0.9rem;
+    opacity: 0.9;
+    margin-bottom: 10px;
+}
+.kpi-footer {
+    font-size: 0.8rem;
+    opacity: 0.7;
+}
+.bg-gradient-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+.bg-gradient-success {
+    background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+}
+.bg-gradient-warning {
+    background: linear-gradient(135deg, #f2994a 0%, #f2c94c 100%);
+}
+.bg-gradient-info {
+    background: linear-gradient(135deg, #3b8d99 0%, #6b6b83 100%);
+}
+.metric-card {
+    background: var(--panel);
+    border-radius: 20px;
+    padding: 25px;
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow-sm);
+}
+.metric-title {
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    margin-bottom: 10px;
+}
+.metric-value-large {
+    font-size: 3rem;
+    font-weight: 800;
+    margin-bottom: 5px;
+}
+.metric-subtitle {
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin-bottom: 15px;
+}
+.store-profit-card {
+    background: var(--panel-soft);
+    border-radius: 16px;
+    padding: 15px;
+    border: 1px solid var(--line);
+}
+.store-profit-name {
+    font-weight: 700;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--line);
+}
+.profit-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 5px 0;
+    font-size: 0.9rem;
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    {% if has_sales %}
+    var ctx = document.getElementById('profitChart').getContext('2d');
+    var labels = {{ labels|safe }};
+    var revenueData = {{ daily_revenue|safe }};
+    var profitData = {{ daily_profit|safe }};
+    
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'Выручка (₽)',
+                    data: revenueData,
+                    backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                    borderColor: 'rgba(102, 126, 234, 1)',
+                    borderWidth: 2,
+                    tension: 0.3,
+                    fill: true,
+                    pointBackgroundColor: 'rgba(102, 126, 234, 1)',
+                    pointBorderColor: '#fff',
+                    pointRadius: 4,
+                    pointHoverRadius: 6
+                },
+                {
+                    label: 'Прибыль (₽)',
+                    data: profitData,
+                    backgroundColor: 'rgba(46, 204, 113, 0.1)',
+                    borderColor: 'rgba(46, 204, 113, 1)',
+                    borderWidth: 2,
+                    tension: 0.3,
+                    fill: true,
+                    pointBackgroundColor: 'rgba(46, 204, 113, 1)',
+                    pointBorderColor: '#fff',
+                    pointRadius: 4,
+                    pointHoverRadius: 6
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return context.dataset.label + ': ' + context.raw.toLocaleString('ru-RU') + ' ₽';
+                        }
+                    },
+                    backgroundColor: 'rgba(0,0,0,0.8)',
+                    titleFont: { size: 14, weight: 'bold' },
+                    bodyFont: { size: 13 },
+                    padding: 10,
+                    cornerRadius: 8
+                },
+                legend: {
+                    position: 'top',
+                    labels: {
+                        usePointStyle: true,
+                        boxWidth: 10
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            if (value >= 1000000) {
+                                return (value / 1000000).toFixed(1) + ' млн ₽';
+                            } else if (value >= 1000) {
+                                return (value / 1000).toFixed(0) + ' тыс ₽';
+                            }
+                            return value + ' ₽';
+                        },
+                        color: '#6b7280'
+                    },
+                    grid: {
+                        color: 'rgba(107, 114, 128, 0.1)'
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Дни месяца',
+                        color: '#6b7280'
+                    },
+                    ticks: {
+                        color: '#6b7280'
+                    },
+                    grid: {
+                        display: false
+                    }
+                }
+            }
+        }
+    });
+    {% endif %}
+});
+</script>
+{% endblock %}

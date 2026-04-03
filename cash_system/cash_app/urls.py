@@ -83,4 +83,25 @@ urlpatterns = [
 
     path('products/<int:product_id>/add-store-quantity/', views.add_store_quantity, name='add_store_quantity'),
     path('api/store-product/<int:store_id>/<int:product_id>/', views.api_store_product, name='api_store_product'),
+
+    # Зарплата
+    path('salary/settings/', views.salary_settings_list, name='salary_settings_list'),
+    path('salary/settings/create/<int:user_id>/', views.salary_settings_create, name='salary_settings_create'),
+    path('salary/settings/edit/<int:pk>/', views.salary_settings_edit, name='salary_settings_edit'),
+    path('salary/calculations/', views.salary_calculations, name='salary_calculations'),
+    path('salary/calculate/<int:year>/<int:month>/', views.salary_calculate, name='salary_calculate'),
+    path('salary/detail/<int:pk>/', views.salary_detail, name='salary_detail'),
+    path('salary/mark-paid/<int:pk>/', views.salary_mark_paid, name='salary_mark_paid'),
+
+    # Дашборд по складам
+    path('store-dashboard/', views.store_dashboard, name='store_dashboard'),
+
+    # Дашборд прибыли
+    path('profit-dashboard/', views.profit_dashboard, name='profit_dashboard'),
+
+    # Рецепты
+    path('recipes/', views.recipe_list, name='recipe_list'),
+    path('recipes/create/<int:product_id>/', views.recipe_create, name='recipe_create'),
+    path('recipes/<int:pk>/edit/', views.recipe_edit, name='recipe_edit'),
+    path('recipes/<int:pk>/delete/', views.recipe_delete, name='recipe_delete'),
 ]

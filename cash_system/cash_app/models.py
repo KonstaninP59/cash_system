@@ -8,7 +8,7 @@ from django.contrib.auth.models import User
 from django.core.files.base import ContentFile
 from django.db import models
 from django.db.models import Sum
-from django.db.models.signals import post_save
+from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 from django.utils import timezone
 
@@ -48,10 +48,12 @@ class StoreAddress(models.Model):
 
 
 class Product(models.Model):
-    """Модель товара (без количества - количество хранится в StoreProduct)"""
+    """Модель товара"""
     UNIT_CHOICES = [
         ('pcs', 'шт'),
         ('kg', 'кг'),
+        ('g', 'г'),
+        ('ml', 'мл'),
     ]
 
     name = models.CharField('Название', max_length=200)
@@ -67,8 +69,12 @@ class Product(models.Model):
     )
     base_price = models.DecimalField('Базовая цена', max_digits=10, decimal_places=2, default=0)
     price = models.DecimalField('Цена продажи', max_digits=10, decimal_places=2)
+    cost_price = models.DecimalField('Себестоимость', max_digits=10, decimal_places=2, default=0,
+                                      help_text='Закупочная цена товара (для ингредиентов) или рассчитанная (для блюд)')
     unit = models.CharField('Единица измерения', max_length=3, choices=UNIT_CHOICES, default='pcs')
     expiration_date = models.DateField('Срок годности')
+    is_composite = models.BooleanField('Составное блюдо', default=False,
+                                        help_text='Отметьте, если это блюдо, которое готовится из ингредиентов')
     created_at = models.DateTimeField('Дата создания', auto_now_add=True)
     updated_at = models.DateTimeField('Дата обновления', auto_now=True)
 
@@ -79,6 +85,16 @@ class Product(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.get_unit_display()})"
+    
+    def get_profit_per_unit(self):
+        """Прибыль с единицы товара"""
+        return self.price - self.cost_price
+    
+    def get_margin_percent(self):
+        """Маржинальность в процентах"""
+        if self.price > 0:
+            return (self.get_profit_per_unit() / self.price) * 100
+        return 0
 
     def save(self, *args, **kwargs):
         qr_missing_before_save = not bool(self.qr_code)
@@ -357,3 +373,149 @@ class PriceListItem(models.Model):
             return self.custom_price
         return self.product.base_price * self.price_list.multiplier
     
+
+class SalarySettings(models.Model):
+    """Модель настроек зарплаты"""
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='salary_settings', verbose_name='Сотрудник')
+    base_salary = models.DecimalField('Оклад', max_digits=10, decimal_places=2, default=0)
+    commission_percent = models.DecimalField('Процент от продаж', max_digits=5, decimal_places=2, default=0, 
+                                               help_text='Процент от выручки сотрудника')
+    bonus_percent = models.DecimalField('Премиальная часть', max_digits=5, decimal_places=2, default=0,
+                                         help_text='Дополнительный процент при выполнении плана')
+    plan_completion_threshold = models.DecimalField('Порог выполнения плана для премии', max_digits=5, decimal_places=2, default=100,
+                                                     help_text='Минимальный процент выполнения плана для получения премии')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='salary_updates', verbose_name='Кем обновлено')
+    
+    class Meta:
+        verbose_name = 'Настройка зарплаты'
+        verbose_name_plural = 'Настройки зарплат'
+    
+    def __str__(self):
+        return f"Зарплата {self.user.username}: оклад {self.base_salary} ₽, комиссия {self.commission_percent}%"
+
+
+class SalaryCalculation(models.Model):
+    """Модель расчета зарплаты за месяц"""
+    STATUS_CHOICES = [
+        ('draft', 'Черновик'),
+        ('calculated', 'Рассчитано'),
+        ('paid', 'Выплачено'),
+    ]
+    
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='salary_calculations', verbose_name='Сотрудник')
+    month = models.IntegerField('Месяц', choices=[(i, i) for i in range(1, 13)])
+    year = models.IntegerField('Год')
+    
+    base_salary = models.DecimalField('Оклад', max_digits=10, decimal_places=2, default=0)
+    commission = models.DecimalField('Комиссия от продаж', max_digits=10, decimal_places=2, default=0)
+    bonus = models.DecimalField('Премия', max_digits=10, decimal_places=2, default=0)
+    total_salary = models.DecimalField('Итого к выплате', max_digits=10, decimal_places=2, default=0)
+    
+    total_sales = models.DecimalField('Общая выручка за месяц', max_digits=10, decimal_places=2, default=0)
+    plan_completion = models.DecimalField('Выполнение плана', max_digits=5, decimal_places=2, default=0)
+    
+    status = models.CharField('Статус', max_length=20, choices=STATUS_CHOICES, default='draft')
+    calculated_at = models.DateTimeField(auto_now_add=True)
+    paid_at = models.DateTimeField(null=True, blank=True)
+    notes = models.TextField('Примечания', blank=True)
+    
+    class Meta:
+        verbose_name = 'Расчет зарплаты'
+        verbose_name_plural = 'Расчеты зарплат'
+        unique_together = ['user', 'month', 'year']
+        ordering = ['-year', '-month', 'user__username']
+    
+    def __str__(self):
+        return f"{self.user.username} - {self.month}.{self.year}: {self.total_salary} ₽"
+    
+
+class Recipe(models.Model):
+    """Рецепт составного блюда"""
+    product = models.OneToOneField(
+        Product, 
+        on_delete=models.CASCADE, 
+        related_name='recipe',
+        verbose_name='Готовое блюдо'
+    )
+    yield_quantity = models.DecimalField(
+        'Выход продукта',
+        max_digits=10, 
+        decimal_places=3, 
+        default=1,
+        help_text='Количество готового продукта из рецепта (например, 1 порция = 1 шт)'
+    )
+    cooking_time = models.PositiveIntegerField(
+        'Время приготовления (мин)',
+        blank=True, 
+        null=True
+    )
+    instructions = models.TextField('Инструкция по приготовлению', blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Рецепт'
+        verbose_name_plural = 'Рецепты'
+
+    def __str__(self):
+        return f"Рецепт: {self.product.name}"
+
+    def calculate_cost_price(self):
+        """Расчет себестоимости готового блюда на основе ингредиентов"""
+        total_cost = 0
+        for item in self.recipe_ingredients.all():
+            cost = float(item.ingredient.cost_price) * float(item.quantity)
+            total_cost += cost
+        # Делим на выход продукта (если рецепт дает несколько порций)
+        return total_cost / float(self.yield_quantity)
+
+    def update_product_cost_price(self):
+        """Обновить себестоимость готового продукта"""
+        new_cost = self.calculate_cost_price()
+        self.product.cost_price = Decimal(str(new_cost))
+        self.product.save(update_fields=['cost_price', 'updated_at'])
+    
+    def get_required_ingredients(self):
+        """Получить список необходимых ингредиентов с количеством"""
+        ingredients = {}
+        for item in self.recipe_ingredients.all():
+            ingredients[item.ingredient.id] = {
+                'product': item.ingredient,
+                'quantity': float(item.quantity),
+                'unit': item.ingredient.get_unit_display()
+            }
+        return ingredients
+
+
+class RecipeIngredient(models.Model):
+    """Ингредиент в рецепте"""
+    recipe = models.ForeignKey(Recipe, on_delete=models.CASCADE, related_name='recipe_ingredients')
+    ingredient = models.ForeignKey(Product, on_delete=models.CASCADE, verbose_name='Ингредиент')
+    quantity = models.DecimalField('Количество', max_digits=10, decimal_places=3)
+    notes = models.CharField('Примечания', max_length=200, blank=True)
+
+    class Meta:
+        verbose_name = 'Ингредиент рецепта'
+        verbose_name_plural = 'Ингредиенты рецептов'
+        unique_together = ['recipe', 'ingredient']
+
+    def __str__(self):
+        return f"{self.ingredient.name}: {self.quantity} {self.ingredient.get_unit_display()}"
+    
+
+@receiver([post_save, post_delete], sender=RecipeIngredient)
+def update_recipe_cost(sender, instance, **kwargs):
+    """При изменении состава рецепта обновляем себестоимость блюда"""
+    instance.recipe.update_product_cost_price()
+
+
+@receiver(post_save, sender=Product)
+def update_composite_products_cost(sender, instance, **kwargs):
+    """При изменении себестоимости ингредиента обновляем все блюда, где он используется"""
+    if not instance.is_composite:
+        # Найти все рецепты, где используется этот ингредиент
+        recipes = Recipe.objects.filter(recipe_ingredients__ingredient=instance).distinct()
+        for recipe in recipes:
+            recipe.update_product_cost_price()

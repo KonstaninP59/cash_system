@@ -19,8 +19,23 @@
                         <div class="col-md-6 mb-3">
                             <label for="{{ field.id_for_label }}" class="form-label">{{ field.label }}</label>
                             {{ field }}
+                            {% if field.name == 'expiration_date' and product %}
+                                <small class="text-muted d-block mt-1">
+                                    <i class="bi bi-calendar3"></i> 
+                                    Текущая дата: {{ product.expiration_date|date:"d.m.Y" }}
+                                </small>
+                            {% endif %}
+                            {% if field.name == 'is_composite' %}
+                                <small class="text-muted d-block mt-1">
+                                    <i class="bi bi-info-circle"></i> 
+                                    Отметьте, если это блюдо, которое готовится из ингредиентов
+                                </small>
+                            {% endif %}
                             {% if field.errors %}
                                 <div class="text-danger small">{{ field.errors }}</div>
+                            {% endif %}
+                            {% if field.help_text %}
+                                <div class="form-text text-muted">{{ field.help_text }}</div>
                             {% endif %}
                         </div>
                         {% endfor %}
@@ -35,7 +50,7 @@
                             <div class="row">
                                 <div class="col-md-6 mb-3">
                                     <label for="store_id" class="form-label">Выберите склад</label>
-                                    <select name="store_id" id="store_id" class="form-select" {% if product %}required{% endif %}>
+                                    <select name="store_id" id="store_id" class="form-select" {% if not product %}required{% endif %}>
                                         <option value="">-- Выберите склад --</option>
                                         {% for store in stores %}
                                             <option value="{{ store.id }}" {% if current_store_id == store.id %}selected{% endif %}>
@@ -43,26 +58,34 @@
                                             </option>
                                         {% endfor %}
                                     </select>
-                                    <small class="text-muted">Товар будет привязан к выбранному складу</small>
+                                    <small class="text-muted">Товар будет добавлен на выбранный склад</small>
                                 </div>
                                 <div class="col-md-6 mb-3">
-                                    <label for="quantity" class="form-label">Количество на складе</label>
+                                    <label for="quantity" class="form-label">Начальное количество</label>
                                     <input type="number" name="quantity" id="quantity" class="form-control" 
                                            step="0.001" min="0" value="{{ current_quantity|default:'0' }}">
-                                    <small class="text-muted">Укажите количество товара на складе</small>
+                                    <small class="text-muted">Укажите начальное количество товара на складе</small>
                                 </div>
                             </div>
                             <div class="alert alert-info mt-2">
                                 <i class="bi bi-info-circle"></i>
-                                <strong>Важно:</strong> Если склад не выбран, товар будет добавлен на первый активный склад с указанным количеством.
+                                <strong>Важно:</strong> Выберите склад, на который будет добавлен товар.
+                                {% if product and product.is_composite %}
+                                <br>Для составных блюд количество на складе не хранится - при продаже будут списываться ингредиенты.
+                                {% endif %}
                             </div>
                         </div>
                     </div>
                     
                     <div class="alert alert-info">
                         <i class="bi bi-info-circle"></i>
-                        <strong>Информация:</strong> Для товаров в килограммах количество можно указывать с точностью до 0,001 кг.
-                        Для штучных товаров количество указывается целыми числами.
+                        <strong>Информация:</strong> 
+                        <ul class="mb-0 mt-2">
+                            <li>Для товаров в килограммах количество можно указывать с точностью до 0,001 кг.</li>
+                            <li>Для штучных товаров количество указывается целыми числами.</li>
+                            <li>Себестоимость - закупочная цена товара (для ингредиентов).</li>
+                            <li>Если товар отмечен как "Составное блюдо", его себестоимость будет рассчитана автоматически из рецепта.</li>
+                        </ul>
                     </div>
                     
                     <div class="d-flex justify-content-between mt-3">
@@ -84,6 +107,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Обработчик изменения единицы измерения
     var unitSelect = document.querySelector('#id_unit');
     var quantityField = document.querySelector('#quantity');
+    var isCompositeCheckbox = document.querySelector('#id_is_composite');
     
     if (unitSelect && quantityField) {
         function updateQuantityStep() {
@@ -100,24 +124,23 @@ document.addEventListener('DOMContentLoaded', function() {
         updateQuantityStep();
     }
     
-    // При выборе склада можно отобразить текущее количество
-    var storeSelect = document.getElementById('store_id');
-    if (storeSelect) {
-        storeSelect.addEventListener('change', function() {
-            var storeId = this.value;
-            var productId = '{{ product.id|default:"" }}';
-            
-            if (storeId && productId) {
-                fetch(`/api/store-product/${storeId}/${productId}/`)
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.quantity !== undefined) {
-                            quantityField.value = data.quantity;
-                        }
-                    })
-                    .catch(error => console.error('Ошибка:', error));
+    // Для составных блюд блокируем поле количества
+    if (isCompositeCheckbox && quantityField) {
+        function updateQuantityFieldState() {
+            if (isCompositeCheckbox.checked) {
+                quantityField.disabled = true;
+                quantityField.value = 0;
+                quantityField.parentElement.querySelector('small.text-muted').innerHTML = 
+                    'Для составных блюд количество на складе не хранится. При продаже будут списываться ингредиенты.';
+            } else {
+                quantityField.disabled = false;
+                quantityField.parentElement.querySelector('small.text-muted').innerHTML = 
+                    'Укажите начальное количество товара на складе';
             }
-        });
+        }
+        
+        isCompositeCheckbox.addEventListener('change', updateQuantityFieldState);
+        updateQuantityFieldState();
     }
 });
 </script>

@@ -1,0 +1,443 @@
+{% extends 'cash_app/base.html' %}
+{% load static %}
+
+{% block title %} - Дашборд складов{% endblock %}
+
+{% block content %}
+<!-- Заголовок -->
+<div class="dashboard-header mb-4">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+        <div>
+            <h1 class="mb-1"><i class="bi bi-shop"></i> Дашборд складов</h1>
+            <p class="text-muted">Аналитика по каждому складу: продажи, сотрудники, топ товары</p>
+        </div>
+        <div class="dashboard-info">
+            <div class="alert alert-info mb-0">
+                <i class="bi bi-calendar-month"></i> Данные за текущий месяц
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Общая статистика -->
+<div class="row g-4 mb-4">
+    <div class="col-md-3">
+        <div class="kpi-card bg-gradient-primary text-white">
+            <div class="kpi-icon">
+                <i class="bi bi-shop"></i>
+            </div>
+            <div class="kpi-value">{{ stores_count }}</div>
+            <div class="kpi-label">Активных складов</div>
+            <div class="kpi-footer">всего в системе</div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="kpi-card bg-gradient-success text-white">
+            <div class="kpi-icon">
+                <i class="bi bi-cash-stack"></i>
+            </div>
+            <div class="kpi-value">{{ total_sales_all|floatformat:0 }} ₽</div>
+            <div class="kpi-label">Общая выручка</div>
+            <div class="kpi-footer">за текущий месяц</div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="kpi-card bg-gradient-info text-white">
+            <div class="kpi-icon">
+                <i class="bi bi-receipt"></i>
+            </div>
+            <div class="kpi-value">{{ total_sales_count_all }}</div>
+            <div class="kpi-label">Всего чеков</div>
+            <div class="kpi-footer">за текущий месяц</div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="kpi-card bg-gradient-warning text-white">
+            <div class="kpi-icon">
+                <i class="bi bi-people"></i>
+            </div>
+            <div class="kpi-value">{{ total_employees }}</div>
+            <div class="kpi-label">Сотрудников</div>
+            <div class="kpi-footer">на всех складах</div>
+        </div>
+    </div>
+</div>
+
+<!-- График сравнения складов -->
+<div class="card shadow mb-4">
+    <div class="card-header bg-primary text-white">
+        <h5 class="mb-0"><i class="bi bi-bar-chart-steps"></i> Сравнение продаж по складам</h5>
+    </div>
+    <div class="card-body">
+        <canvas id="storesChart" style="height: 400px;"></canvas>
+    </div>
+</div>
+
+<!-- Карточки складов -->
+<div class="row g-4">
+    {% for stat in store_stats %}
+    <div class="col-md-6 col-lg-4">
+        <div class="store-card">
+            <div class="store-card-header" style="background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);">
+                <div class="store-name">
+                    <i class="bi bi-building"></i>
+                    <strong>{{ stat.store.name }}</strong>
+                </div>
+                <div class="store-address">
+                    <i class="bi bi-geo-alt"></i> {{ stat.store.address }}
+                </div>
+            </div>
+            <div class="store-card-body">
+                <div class="store-stats">
+                    <div class="stat-item">
+                        <div class="stat-label">Выручка за месяц</div>
+                        <div class="stat-value text-success">{{ stat.sales|floatformat:0 }} ₽</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Чеков</div>
+                        <div class="stat-value">{{ stat.sales_count }}</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Средний чек</div>
+                        <div class="stat-value">{{ stat.average_check|floatformat:0 }} ₽</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Выручка за год</div>
+                        <div class="stat-value">{{ stat.yearly_sales|floatformat:0 }} ₽</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Сотрудников</div>
+                        <div class="stat-value">{{ stat.employees_count }}</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Товаров в наличии</div>
+                        <div class="stat-value">{{ stat.products_count }}</div>
+                    </div>
+                </div>
+                
+                {% if stat.top_products %}
+                <div class="store-top-products">
+                    <div class="top-products-title">
+                        <i class="bi bi-trophy"></i> Топ-3 товара
+                    </div>
+                    <div class="top-products-list">
+                        {% for product in stat.top_products %}
+                        <div class="top-product-item">
+                            <div class="top-product-rank rank-{{ forloop.counter }}">{{ forloop.counter }}</div>
+                            <div class="top-product-info">
+                                <div class="top-product-name">{{ product.name }}</div>
+                                <div class="top-product-meta">
+                                    {% if product.unit == 'kg' %}
+                                        {{ product.quantity|floatformat:3 }} кг
+                                    {% else %}
+                                        {{ product.quantity|floatformat:0 }} шт
+                                    {% endif %}
+                                    • {{ product.total|floatformat:0 }} ₽
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            <div class="store-card-footer">
+                <div class="progress" style="height: 4px;">
+                    <div class="progress-bar bg-success" style="width: {% widthratio stat.sales total_sales_all 100 %}%"></div>
+                </div>
+                <div class="store-percent">
+                    {{ stat.sales|floatformat:0 }} ₽ ({% widthratio stat.sales total_sales_all 100 %}% от общей выручки)
+                </div>
+            </div>
+        </div>
+    </div>
+    {% empty %}
+    <div class="col-12">
+        <div class="text-center py-5">
+            <i class="bi bi-shop fs-1 d-block text-muted mb-3"></i>
+            <h5 class="text-muted">Нет активных складов</h5>
+            <p class="text-muted">Добавьте склад в разделе "Управление → Склады"</p>
+            <a href="{% url 'store_list' %}" class="btn btn-primary">
+                <i class="bi bi-plus-lg"></i> Добавить склад
+            </a>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<style>
+/* KPI Cards */
+.kpi-card {
+    position: relative;
+    border-radius: 20px;
+    padding: 20px;
+    overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+    transition: transform 0.3s ease;
+}
+.kpi-card:hover {
+    transform: translateY(-5px);
+}
+.kpi-icon {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    font-size: 2rem;
+    opacity: 0.3;
+}
+.kpi-value {
+    font-size: 2.5rem;
+    font-weight: 800;
+    margin-bottom: 5px;
+}
+.kpi-label {
+    font-size: 0.9rem;
+    opacity: 0.9;
+    margin-bottom: 10px;
+}
+.kpi-footer {
+    font-size: 0.8rem;
+    opacity: 0.7;
+}
+.bg-gradient-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+.bg-gradient-success {
+    background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+}
+.bg-gradient-info {
+    background: linear-gradient(135deg, #3b8d99 0%, #6b6b83 100%);
+}
+.bg-gradient-warning {
+    background: linear-gradient(135deg, #f2994a 0%, #f2c94c 100%);
+}
+
+/* Store Cards */
+.store-card {
+    background: var(--panel);
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+    transition: transform 0.2s, box-shadow 0.2s;
+    height: 100%;
+}
+.store-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+}
+.store-card-header {
+    padding: 20px;
+    color: white;
+}
+.store-name {
+    font-size: 1.2rem;
+    margin-bottom: 8px;
+}
+.store-address {
+    font-size: 0.8rem;
+    opacity: 0.9;
+}
+.store-card-body {
+    padding: 20px;
+}
+.store-stats {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 15px;
+    margin-bottom: 20px;
+}
+.stat-item {
+    text-align: center;
+}
+.stat-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 5px;
+}
+.stat-value {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text);
+}
+.store-top-products {
+    border-top: 1px solid var(--line);
+    padding-top: 15px;
+}
+.top-products-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--muted);
+    margin-bottom: 10px;
+}
+.top-products-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.top-product-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.top-product-rank {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    font-weight: bold;
+    font-size: 0.8rem;
+}
+.rank-1 {
+    background: linear-gradient(135deg, #ffd700, #ff8c00);
+    color: white;
+}
+.rank-2 {
+    background: linear-gradient(135deg, #c0c0c0, #a0a0a0);
+    color: white;
+}
+.rank-3 {
+    background: linear-gradient(135deg, #cd7f32, #b87333);
+    color: white;
+}
+.top-product-info {
+    flex: 1;
+}
+.top-product-name {
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+.top-product-meta {
+    font-size: 0.7rem;
+    color: var(--muted);
+}
+.store-card-footer {
+    padding: 12px 20px;
+    background: var(--panel-soft);
+    border-top: 1px solid var(--line);
+}
+.store-percent {
+    font-size: 0.7rem;
+    color: var(--muted);
+    margin-top: 8px;
+    text-align: center;
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // График сравнения складов
+    var ctx = document.getElementById('storesChart').getContext('2d');
+    var storeNames = {{ store_names|safe }};
+    var chartData = {{ chart_data|safe }};
+    var labels = {{ labels|safe }};
+    
+    // Генерируем цвета для каждого склада
+    var colors = [
+        'rgba(102, 126, 234, 0.7)',
+        'rgba(17, 153, 142, 0.7)',
+        'rgba(242, 153, 74, 0.7)',
+        'rgba(235, 87, 87, 0.7)',
+        'rgba(111, 142, 154, 0.7)',
+        'rgba(149, 176, 155, 0.7)',
+    ];
+    var borderColors = [
+        'rgba(102, 126, 234, 1)',
+        'rgba(17, 153, 142, 1)',
+        'rgba(242, 153, 74, 1)',
+        'rgba(235, 87, 87, 1)',
+        'rgba(111, 142, 154, 1)',
+        'rgba(149, 176, 155, 1)',
+    ];
+    
+    var datasets = [];
+    var i = 0;
+    for (var storeName in chartData) {
+        datasets.push({
+            label: storeName,
+            data: chartData[storeName],
+            backgroundColor: colors[i % colors.length],
+            borderColor: borderColors[i % borderColors.length],
+            borderWidth: 2,
+            tension: 0.3,
+            fill: false,
+            pointBackgroundColor: borderColors[i % borderColors.length],
+            pointBorderColor: '#fff',
+            pointRadius: 3,
+            pointHoverRadius: 5
+        });
+        i++;
+    }
+    
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return context.dataset.label + ': ' + context.raw.toLocaleString('ru-RU') + ' ₽';
+                        }
+                    },
+                    backgroundColor: 'rgba(0,0,0,0.8)',
+                    titleFont: { size: 14, weight: 'bold' },
+                    bodyFont: { size: 13 },
+                    padding: 10,
+                    cornerRadius: 8
+                },
+                legend: {
+                    position: 'top',
+                    labels: {
+                        usePointStyle: true,
+                        boxWidth: 10
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            if (value >= 1000000) {
+                                return (value / 1000000).toFixed(1) + ' млн ₽';
+                            } else if (value >= 1000) {
+                                return (value / 1000).toFixed(0) + ' тыс ₽';
+                            }
+                            return value + ' ₽';
+                        },
+                        color: '#6b7280'
+                    },
+                    grid: {
+                        color: 'rgba(107, 114, 128, 0.1)'
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Дни месяца',
+                        color: '#6b7280'
+                    },
+                    ticks: {
+                        color: '#6b7280'
+                    },
+                    grid: {
+                        display: false
+                    }
+                }
+            }
+        }
+    });
+});
+</script>
+{% endblock %}

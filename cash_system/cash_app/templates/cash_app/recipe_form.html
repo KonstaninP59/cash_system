@@ -1,0 +1,185 @@
+{% extends 'cash_app/base.html' %}
+{% load static %}
+
+{% block title %} - {{ title }}{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0"><i class="bi bi-journal-bookmark-fill"></i> {{ title }}</h4>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+                    
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="yield_quantity" class="form-label">Выход продукта</label>
+                                <input type="number" class="form-control" id="yield_quantity" name="yield_quantity" 
+                                       step="0.001" min="0.001" value="{{ recipe.yield_quantity|default:'1' }}">
+                                <small class="text-muted">Количество готового продукта (например, 1 порция = 1)</small>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="cooking_time" class="form-label">Время приготовления (мин)</label>
+                                <input type="number" class="form-control" id="cooking_time" name="cooking_time" 
+                                       min="0" value="{{ recipe.cooking_time|default:'' }}">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label class="form-label">Себестоимость (рассчитана)</label>
+                                <input type="text" class="form-control" readonly 
+                                       value="{% if recipe %}{{ recipe.product.cost_price|floatformat:2 }} ₽{% else %}—{% endif %}">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="instructions" class="form-label">Инструкция по приготовлению</label>
+                        <textarea class="form-control" id="instructions" name="instructions" rows="3">{{ recipe.instructions|default:'' }}</textarea>
+                    </div>
+                    
+                    <hr>
+                    
+                    <h5 class="mb-3"><i class="bi bi-box"></i> Ингредиенты</h5>
+                    
+                    <div class="table-responsive">
+                        <table class="table table-hover" id="ingredients-table">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Ингредиент</th>
+                                    <th>Количество</th>
+                                    <th>Ед. изм.</th>
+                                    <th>Себестоимость</th>
+                                    <th>Стоимость</th>
+                                    <th style="width: 50px;"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="ingredients-body">
+                                {% for ingredient in ingredients %}
+                                <tr class="ingredient-row" data-ingredient-id="{{ ingredient.id }}">
+                                    <td>
+                                        <div class="form-check">
+                                            <input type="checkbox" class="form-check-input ingredient-checkbox" 
+                                                   name="ingredient_ids" value="{{ ingredient.id }}"
+                                                   {% if ingredient.id in existing_ids %}checked{% endif %}>
+                                            <label class="form-check-label">{{ ingredient.name }}</label>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <input type="number" class="form-control form-control-sm quantity-input" 
+                                               name="quantities" step="0.001" min="0.001"
+                                               style="width: 120px;"
+                                               value="{% for key, val in existing_ingredients.items %}{% if key == ingredient.id %}{{ val.quantity }}{% endif %}{% endfor %}"
+                                               {% if ingredient.id not in existing_ids %}disabled{% endif %}>
+                                    </td>
+                                    <td>{{ ingredient.get_unit_display }}</td>
+                                    <td class="cost-price-cell">{{ ingredient.cost_price|floatformat:2 }} ₽</td>
+                                    <td class="total-cost-cell">—</td>
+                                    <td class="text-center">
+                                        <button type="button" class="btn btn-sm btn-outline-danger remove-ingredient" style="display: none;">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                            <tfoot class="table-light">
+                                <tr>
+                                    <th colspan="4" class="text-end">Общая себестоимость:</th>
+                                    <th id="total-cost-display">0.00 ₽</th>
+                                    <th></th>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                    
+                    <div class="alert alert-info mt-3">
+                        <i class="bi bi-info-circle"></i>
+                        <strong>Как это работает:</strong>
+                        <ul class="mb-0 mt-2">
+                            <li>Себестоимость блюда автоматически рассчитывается на основе выбранных ингредиентов</li>
+                            <li>При изменении цен на ингредиенты, себестоимость блюда пересчитывается автоматически</li>
+                            <li>При продаже блюда со склада списываются ингредиенты, а не само блюдо</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="d-flex justify-content-between mt-3">
+                        <a href="{% url 'recipe_list' %}" class="btn btn-secondary">
+                            <i class="bi bi-arrow-left"></i> Назад
+                        </a>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-lg"></i> Сохранить рецепт
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Обработка чекбоксов ингредиентов
+    const checkboxes = document.querySelectorAll('.ingredient-checkbox');
+    const quantityInputs = document.querySelectorAll('.quantity-input');
+    
+    function updateTotalCost() {
+        let totalCost = 0;
+        const rows = document.querySelectorAll('.ingredient-row');
+        
+        rows.forEach(row => {
+            const checkbox = row.querySelector('.ingredient-checkbox');
+            const quantityInput = row.querySelector('.quantity-input');
+            const costPriceCell = row.querySelector('.cost-price-cell');
+            const totalCostCell = row.querySelector('.total-cost-cell');
+            
+            if (checkbox && checkbox.checked && quantityInput && quantityInput.value) {
+                const quantity = parseFloat(quantityInput.value) || 0;
+                const costPriceText = costPriceCell.innerText;
+                const costPrice = parseFloat(costPriceText.replace('₽', '').trim()) || 0;
+                const itemCost = quantity * costPrice;
+                totalCost += itemCost;
+                totalCostCell.innerHTML = itemCost.toFixed(2) + ' ₽';
+            } else {
+                totalCostCell.innerHTML = '—';
+            }
+        });
+        
+        document.getElementById('total-cost-display').innerHTML = totalCost.toFixed(2) + ' ₽';
+        
+        // Обновляем поле себестоимости блюда
+        const yieldQuantity = parseFloat(document.getElementById('yield_quantity').value) || 1;
+        const costPerPortion = totalCost / yieldQuantity;
+        // Можно добавить отображение себестоимости порции
+    }
+    
+    checkboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', function() {
+            const row = this.closest('.ingredient-row');
+            const quantityInput = row.querySelector('.quantity-input');
+            if (quantityInput) {
+                quantityInput.disabled = !this.checked;
+                if (!this.checked) {
+                    quantityInput.value = '';
+                }
+            }
+            updateTotalCost();
+        });
+    });
+    
+    quantityInputs.forEach(input => {
+        input.addEventListener('input', updateTotalCost);
+    });
+    
+    document.getElementById('yield_quantity').addEventListener('input', updateTotalCost);
+    
+    updateTotalCost();
+});
+</script>
+{% endblock %}

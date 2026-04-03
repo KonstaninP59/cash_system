@@ -55,7 +55,7 @@
 
                 <div class="collapse navbar-collapse order-xl-2" id="mainNav">
                     <ul class="navbar-nav mx-auto app-nav">
-                        <!-- Склад видят только администраторы - без стрелки -->
+                        <!-- Склад видят только администраторы -->
                         {% if user.is_superuser or user.is_staff %}
                         <li class="nav-item">
                             <a class="nav-link {% if request.resolver_match.url_name == 'product_list' %}active{% endif %}"
@@ -86,7 +86,33 @@
                             </a>
                         </li>
                         
-                        <!-- Дашборд видят все -->
+                        <!-- Дашборд видят все (с подменю для администратора) -->
+                        {% if user.is_superuser or user.is_staff %}
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle {% if request.resolver_match.url_name == 'dashboard' or request.resolver_match.url_name == 'store_dashboard' %}active{% endif %}"
+                               href="#" data-bs-toggle="dropdown">
+                                <i class="bi bi-bar-chart-line"></i>
+                                <span>Дашборд</span>
+                            </a>
+                            <ul class="dropdown-menu app-dropdown">
+                                <li>
+                                    <a class="dropdown-item" href="{% url 'dashboard' %}">
+                                        <i class="bi bi-graph-up"></i> Эффективность
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item" href="{% url 'profit_dashboard' %}">
+                                        <i class="bi bi-pie-chart"></i> Прибыль
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item" href="{% url 'store_dashboard' %}">
+                                        <i class="bi bi-shop"></i> Склады
+                                    </a>
+                                </li>
+                            </ul>
+                        </li>
+                        {% else %}
                         <li class="nav-item">
                             <a class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}"
                                href="{% url 'dashboard' %}">
@@ -94,11 +120,12 @@
                                 <span>Дашборд</span>
                             </a>
                         </li>
+                        {% endif %}
 
                         <!-- Управление видят только администраторы -->
                         {% if user.is_superuser or user.is_staff %}
                         <li class="nav-item dropdown">
-                            <a class="nav-link dropdown-toggle {% if request.resolver_match.url_name == 'coupon_list' or request.resolver_match.url_name == 'category_list' or request.resolver_match.url_name == 'price_list_list' or request.resolver_match.url_name == 'user_list' or request.resolver_match.url_name == 'store_list' %}active{% endif %}"
+                            <a class="nav-link dropdown-toggle {% if request.resolver_match.url_name == 'coupon_list' or request.resolver_match.url_name == 'category_list' or request.resolver_match.url_name == 'price_list_list' or request.resolver_match.url_name == 'user_list' or request.resolver_match.url_name == 'store_list' or request.resolver_match.url_name == 'salary_settings_list' %}active{% endif %}"
                                href="#" data-bs-toggle="dropdown">
                                 <i class="bi bi-sliders"></i>
                                 <span>Управление</span>
@@ -115,6 +142,11 @@
                                     </a>
                                 </li>
                                 <li>
+                                    <a class="dropdown-item" href="{% url 'recipe_list' %}">
+                                        <i class="bi bi-journal-bookmark-fill"></i> Рецепты
+                                    </a>
+                                </li>
+                                <li>
                                     <a class="dropdown-item" href="{% url 'price_list_list' %}">
                                         <i class="bi bi-tags"></i> Прайс-листы
                                     </a>
@@ -127,6 +159,11 @@
                                 <li>
                                     <a class="dropdown-item" href="{% url 'user_list' %}">
                                         <i class="bi bi-people"></i> Сотрудники
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item" href="{% url 'salary_settings_list' %}">
+                                        <i class="bi bi-calculator"></i> Зарплата
                                     </a>
                                 </li>
                                 <li><hr class="dropdown-divider"></li>

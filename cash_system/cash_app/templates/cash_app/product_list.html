@@ -4,7 +4,7 @@
 {% block title %} - Склад{% endblock %}
 
 {% block content %}
-<!-- Hero секция - перенесена вверх -->
+<!-- Hero секция -->
 <section class="inventory-hero mb-4">
     <div class="hero-content">
         <div class="hero-icon">
@@ -78,9 +78,9 @@
 </div>
 {% endif %}
 
-<!-- Метрики - агрессивный дизайн -->
+<!-- Метрики с кликабельными ссылками -->
 <section class="metric-grid mb-5">
-    <div class="metric-card metric-primary" data-glow>
+    <a href="?filter=all{% if search_query %}&search={{ search_query }}{% endif %}" class="metric-card metric-primary text-decoration-none" data-glow>
         <div class="metric-glow"></div>
         <div class="metric-icon">
             <i class="bi bi-box-seam-fill"></i>
@@ -101,9 +101,9 @@
                 <i class="bi bi-arrow-up"></i> +12%
             </span>
         </div>
-    </div>
+    </a>
 
-    <div class="metric-card metric-warning">
+    <a href="?filter=expiring_soon{% if search_query %}&search={{ search_query }}{% endif %}" class="metric-card metric-warning text-decoration-none">
         <div class="metric-glow"></div>
         <div class="metric-icon">
             <i class="bi bi-clock-history"></i>
@@ -118,9 +118,9 @@
                 <i class="bi bi-exclamation-triangle"></i> Внимание!
             </span>
         </div>
-    </div>
+    </a>
 
-    <div class="metric-card metric-danger">
+    <a href="?filter=expired{% if search_query %}&search={{ search_query }}{% endif %}" class="metric-card metric-danger text-decoration-none">
         <div class="metric-glow"></div>
         <div class="metric-icon">
             <i class="bi bi-calendar-x-fill"></i>
@@ -135,10 +135,10 @@
                 <i class="bi bi-x-octagon"></i> Срочно!
             </span>
         </div>
-    </div>
+    </a>
 </section>
 
-<!-- Поиск с эффектами -->
+<!-- Поиск -->
 <section class="search-section mb-4">
     <form method="get" class="search-form">
         <div class="search-container">
@@ -417,6 +417,7 @@
     overflow: hidden;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     border: 1px solid rgba(102, 126, 234, 0.1);
+    cursor: pointer;
 }
 .metric-card:hover {
     transform: translateY(-5px);

@@ -1,0 +1,75 @@
+{% extends 'cash_app/base.html' %}
+{% load static %}
+
+{% block title %} - Настройки зарплаты{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="bi bi-calculator"></i> Настройки зарплаты</h1>
+    {% if users_without_settings %}
+    <div class="dropdown">
+        <button class="btn btn-success dropdown-toggle" type="button" data-bs-toggle="dropdown">
+            <i class="bi bi-plus-lg"></i> Добавить сотрудника
+        </button>
+        <ul class="dropdown-menu">
+            {% for user in users_without_settings %}
+            <li>
+                <a class="dropdown-item" href="{% url 'salary_settings_create' user.id %}">
+                    {{ user.username }}
+                </a>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+</div>
+
+<div class="card shadow">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead class="table-light">
+                    <tr>
+                        <th>Сотрудник</th>
+                        <th>Оклад (₽)</th>
+                        <th>Комиссия (%)</th>
+                        <th>Премия (%)</th>
+                        <th>Порог премии (%)</th>
+                        <th>Обновлено</th>
+                        <th>Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for settings in settings_list %}
+                    <tr>
+                        <td>{{ settings.user.username }}</td>
+                        <td>{{ settings.base_salary|floatformat:0 }}</td>
+                        <td>{{ settings.commission_percent|floatformat:1 }}%</td>
+                        <td>{{ settings.bonus_percent|floatformat:1 }}%</td>
+                        <td>{{ settings.plan_completion_threshold|floatformat:0 }}%</td>
+                        <td>{{ settings.updated_at|date:"d.m.Y" }}</td>
+                        <td>
+                            <a href="{% url 'salary_settings_edit' settings.id %}" class="btn btn-sm btn-primary">
+                                <i class="bi bi-pencil"></i>
+                            </a>
+                         </td>
+                     </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="text-center py-4">
+                            <i class="bi bi-calculator fs-1 d-block text-muted"></i>
+                            <p class="text-muted">Нет настроек зарплаты</p>
+                            {% if users_without_settings %}
+                            <a href="#" class="btn btn-primary" data-bs-toggle="dropdown">
+                                <i class="bi bi-plus-lg"></i> Добавить сотрудника
+                            </a>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
